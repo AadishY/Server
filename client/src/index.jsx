@@ -10,7 +10,12 @@ import process from "process";
 import crypto from "crypto";
 
 const SERVER_NAME = "Akatsuki";
-const DEFAULT_WS = process.env.WS_URL || "ws://localhost:8000/ws";
+// The client will use the 'wss' protocol for secure connections
+// if it's running in a browser, but for a simple Node.js app
+// a plain 'ws' connection might be sufficient on some hosts.
+// It is best practice to use the secure protocol, 'wss'.
+const RENDER_URL = "wss://server-19jl.onrender.com/ws";
+const DEFAULT_WS = process.env.WS_URL || RENDER_URL;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "Aadish";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Aadish20m";
 
