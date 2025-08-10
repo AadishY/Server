@@ -1,0 +1,28 @@
+{
+  "name": "akatsuki-cli-chat",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Ink CLI client for Akatsuki single-room chat",
+  "main": "src/index.jsx",
+  "scripts": {
+    "build": "esbuild src/index.jsx --bundle --platform=node --outfile=dist/index.cjs --format=cjs",
+    "start": "tsx src/index.jsx"
+  },
+  "bin": {
+    "akatsuki": "./src/index.jsx"
+  },
+  "author": "You",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.5.0",
+    "ink": "^6.1.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "uuid": "^9.0.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.8",
+    "tsx": "^4.20.3"
+  }
+}
