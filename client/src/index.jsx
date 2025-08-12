@@ -96,9 +96,22 @@ const MessageItem = React.memo(({ m, me }) => {
   if (m.type === "system") {
     return <Text dimColor italic>{`[${ts}] `}{chalk.gray(m.text)}</Text>;
   }
+  if (m.type === "broadcast") {
+    return (
+      <Box borderStyle="round" borderColor="magenta" paddingX={1}>
+        <Text color="magentaBright" bold>
+          {`[BROADCAST from ${m.from} at ${ts}] `}
+          {m.text}
+        </Text>
+      </Box>
+    );
+  }
   if (m.type === "pm") {
     const fromLabel = m.from === me ? chalk.magenta.bold(`${m.from} (you)`) : chalk.magenta.bold(m.from);
     return <Text>{chalk.dim(`[${ts}] `)}{fromLabel}{chalk.dim(" -> ")}{chalk.yellow(m.to.join(","))}: {m.text}</Text>;
+  }
+  if (m.from === "AI") {
+    return <Text color="blueBright">{chalk.dim(`[${ts}] `)}{chalk.bold(m.from)}: {m.text}</Text>;
   }
   const mentionMe = me && m.text && m.text.includes(`@${me}`);
   const fromName = m.from ? colorize(m.from, m.color) : chalk.dim("system");
@@ -106,10 +119,29 @@ const MessageItem = React.memo(({ m, me }) => {
   return mentionMe ? <Text backgroundColor="yellow" color="black">{body}</Text> : body;
 });
 
+const WAKING_MESSAGES = [
+  "Waking the server up...",
+  "Running Aadish's server...",
+  "Fixing the bugs...",
+  "Polishing the pixels...",
+  "Reticulating splines...",
+  "Almost there...",
+];
+
 const LoginUI = ({ onLogin, status }) => {
   const [name, setName] = useState("");
   const [pwd, setPwd] = useState("");
   const [isAskingPwd, setIsAskingPwd] = useState(false);
+  const [wakingMessageIndex, setWakingMessageIndex] = useState(0);
+
+  useEffect(() => {
+    if (status === "connecting" || status === "reconnecting") {
+      const interval = setInterval(() => {
+        setWakingMessageIndex((prevIndex) => (prevIndex + 1) % WAKING_MESSAGES.length);
+      }, 1500);
+      return () => clearInterval(interval);
+    }
+  }, [status]);
 
   const handleSubmitName = () => {
     const trimmed = name.trim();
@@ -119,6 +151,15 @@ const LoginUI = ({ onLogin, status }) => {
   };
 
   const handleSubmitPwd = () => onLogin({ username: name.trim(), password: pwd, wantAdmin: true });
+
+  if (status === "connecting" || status === "reconnecting") {
+    return (
+      <Box flexDirection="column" padding={1} borderStyle="round" alignItems="center">
+        <Spinner type="dots" />
+        <Text bold cyan>{WAKING_MESSAGES[wakingMessageIndex]}</Text>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" padding={1} borderStyle="round">
@@ -140,6 +181,26 @@ const LoginUI = ({ onLogin, status }) => {
     </Box>
   );
 };
+
+const UserList = React.memo(({ users, me }) => {
+  return (
+    <Box width="25%" borderStyle="round" paddingX={1} flexDirection="column">
+      <Text bold>Users ({users.length})</Text>
+      {users.map((u) => (
+        <Box key={u.name}>
+          <Text>
+            {u.role === "admin" ? <Text backgroundColor="red" color="whiteBright" bold> ADMIN </Text> : "       "}
+          </Text>
+          <Text>
+            {' '}
+            {colorize(u.name, u.color)}
+            {u.name === me ? chalk.dim(" (you)") : ""}
+          </Text>
+        </Box>
+      ))}
+    </Box>
+  );
+});
 
 function parseMentions(parts) {
   const recipients = new Set();
@@ -200,7 +261,7 @@ const Chat = ({ initialWsUrl }) => {
       case "user_leave":
         setUsers(u => u.filter(x => x.name !== data.user.name));
         break;
-      case "message": case "ai_resp": case "pm": case "reaction": case "system":
+      case "message": case "ai_resp": case "pm": case "reaction": case "system": case "broadcast":
         setMessages(m => [...m, { id: data.id || uuidv4(), ...data }]);
         break;
       default: pushSys(`Received unknown message type: ${JSON.stringify(data)}`);
@@ -219,24 +280,55 @@ const Chat = ({ initialWsUrl }) => {
     let sent = false;
 
     switch(cmd) {
-      case "/quit": case "/exit": ws.close(); exit(); return;
-      case "/help": setHelpVisible(v => !v); return;
-      case "/clear": setMessages([]); return;
+      case "/e":
+      case "/quit":
+      case "/exit":
+        ws.close();
+        exit();
+        return;
+      case "/help":
+        setHelpVisible(v => !v);
+        return;
+      case "/clear":
+        setMessages([]);
+        return;
       case "/nick":
         if (!args[0]) { pushSys("Usage: /nick <newname>"); return; }
         sent = ws.send({ type: "nick", toNick: args[0] });
         break;
-      case "/color":
-        if (!args[0]) { pushSys("Usage: /color <#RRGGBB|auto|off|colorname>"); return; }
-        const c = args[0].toLowerCase() === "off" ? null : args[0];
+      case "/c":
+      case "/color": {
+        let c = args[0];
+        if (!c) {
+          c = `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`;
+        } else if (c.toLowerCase() === "off") {
+          c = null;
+        }
         setAuthInfo(auth => ({...auth, color: c}));
         sent = ws.send({ type: "color", color: c });
         break;
+      }
       case "/pm": case "/dm": {
         const { recipients, message } = parseMentions(args);
         if (!recipients.length || !message) { pushSys("Usage: /pm @user message..."); return; }
         const payload = { type: "pm", id: uuidv4(), from: authInfo.username, to: recipients, text: message, ts: nowISO() };
         sent = ws.send(payload);
+        break;
+      }
+      case "/ai": {
+        const prompt = args.join(" ");
+        if (!prompt) { pushSys("Usage: /ai <prompt...>"); return; }
+        sent = ws.send({ type: "ai", text: prompt });
+        break;
+      }
+      case "/b": {
+        if (!authInfo.isAdmin) {
+          pushSys("Only admins can broadcast messages.");
+          return;
+        }
+        const message = args.join(" ");
+        if (!message) { pushSys("Usage: /b <message>"); return; }
+        sent = ws.send({ type: "command", raw: `/broadcast ${message}` });
         break;
       }
       default:
@@ -286,17 +378,7 @@ const Chat = ({ initialWsUrl }) => {
         <Box flexGrow={1} borderStyle="round" paddingX={1} marginRight={1} flexDirection="column">
           {visibleMessages.map((m) => <MessageItem key={m.id} m={m} me={authInfo.username} />)}
         </Box>
-        <Box width="25%" borderStyle="round" paddingX={1} flexDirection="column">
-          <Text bold>Users ({users.length})</Text>
-          {users.map((u) => (
-            <Text key={u.name}>
-              {/* IMPROVEMENT: Bolder admin tag */}
-              {u.role === "admin" ? chalk.red.bold("A ") : "  "}
-              {colorize(u.name, u.color)}
-              {u.name === authInfo.username ? chalk.dim(" (you)") : ""}
-            </Text>
-          ))}
-        </Box>
+        <UserList users={users} me={authInfo.username} />
       </Box>
 
       {/* --- FOOTER (Fixed) --- */}
