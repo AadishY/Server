@@ -167,7 +167,7 @@ const LoginUI = ({ onLogin, status }) => {
         <Text bold cyan>{SERVER_NAME}</Text>
         <Text dimColor>Status: {status}</Text>
       </Box>
-      <Box borderStyle="single" padding={1} flexDirection="column">
+      <Box borderStyle="round" padding={1} flexDirection="column">
         <Text bold>{isAskingPwd ? `Enter password for ${ADMIN_USERNAME}` : "Enter a username to join"}</Text>
         <Box marginTop={1}>
           {isAskingPwd ? (
@@ -388,12 +388,29 @@ const Chat = ({ initialWsUrl }) => {
         {helpVisible && (
           <Box marginTop={1} borderStyle="round" padding={1} flexDirection="column">
             <Text bold>Commands</Text>
-            <Text>/nick &lt;new&gt; — Change nickname</Text>
-            <Text>/color &lt;name|#hex&gt; — Set username color</Text>
-            <Text>/pm &lt;@user...&gt; &lt;msg&gt; — Send a private message</Text>
-            <Text>/clear — Clear messages locally</Text>
-            <Text>/help — Toggle this help panel</Text>
-            <Text>/exit — Quit the application</Text>
+            <Text><Text color="cyan">/nick &lt;name&gt;</Text> - Change your nickname</Text>
+            <Text><Text color="cyan">/color [color]</Text> - Set your color. No color picks a random one.</Text>
+            <Text><Text color="cyan">/c [color]</Text> - Alias for /color.</Text>
+            <Text><Text color="cyan">/pm &lt;@user...&gt; &lt;msg&gt;</Text> - Send a private message.</Text>
+            <Text><Text color="cyan">/dm &lt;@user...&gt; &lt;msg&gt;</Text> - Alias for /pm.</Text>
+            <Text><Text color="cyan">/ai &lt;prompt&gt;</Text> - Ask the AI a question.</Text>
+            <Text><Text color="cyan">/clear</Text> - Clear your message view.</Text>
+            <Text><Text color="cyan">/help</Text> - Toggle this help panel.</Text>
+            <Text><Text color="cyan">/exit</Text> - Quit the application.</Text>
+            <Text><Text color="cyan">/e</Text> - Alias for /exit.</Text>
+            {authInfo.isAdmin && (
+              <>
+                <Box marginTop={1} />
+                <Text bold>Admin Commands</Text>
+                <Text><Text color="cyan">/kick &lt;user&gt; [reason]</Text> - Kick a user.</Text>
+                <Text><Text color="cyan">/ban &lt;user&gt; [minutes] [reason]</Text> - Ban a user.</Text>
+                <Text><Text color="cyan">/unban &lt;user&gt;</Text> - Unban a user.</Text>
+                <Text><Text color="cyan">/mute &lt;user&gt; [minutes]</Text> - Mute a user.</Text>
+                <Text><Text color="cyan">/unmute &lt;user&gt;</Text> - Unmute a user.</Text>
+                <Text><Text color="cyan">/broadcast &lt;msg&gt;</Text> - Send a broadcast message.</Text>
+                <Text><Text color="cyan">/b &lt;msg&gt;</Text> - Alias for /broadcast.</Text>
+              </>
+            )}
           </Box>
         )}
       </Box>
