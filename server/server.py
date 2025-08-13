@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Any, Set, List
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from dotenv import load_dotenv
@@ -116,12 +116,21 @@ def get_users_list():
     return [{"name": name, "role": u.role, "color": u.color} for name, u in connected_users.items()]
 
 # --- Groq AI Helper ---
-async def call_groq_api(prompt: str, model: str = "llama3-8b-8192") -> str:
+async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, model: str = "llama3-8b-8192") -> str:
     if not GROQ_API_KEY:
         await asyncio.sleep(0.5)
-        return f"[Simulated AI Response for '{model}'] You asked: '{prompt[:100]}...'"
+        return f"[Simulated AI Response for '{model}'] You asked: '{user_prompt[:100]}...'"
+
+    system_prompt = system_prompt or "You are a helpful assistant in a terminal-based chat application. Keep your answers concise and use markdown for formatting."
+
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-    payload = {"messages": [{"role": "user", "content": prompt}], "model": model}
+    payload = {
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "model": model
+    }
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(GROQ_ENDPOINT, headers=headers, json=payload)
@@ -228,6 +237,10 @@ async def handle_admin_command(admin_name: str, raw_cmd: str):
     else:
         await send_to_user(admin_name, {"type": "system", "text": f"Unknown admin command: {cmd}"})
 
+@app.get("/stats")
+async def get_stats():
+    return JSONResponse({"active_users": len(connected_users)})
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
@@ -320,8 +333,8 @@ async def websocket_endpoint(ws: WebSocket):
         await send_to_user(username, {"type": "users", "users": get_users_list()})
 
         # Send a private welcome message to the new user
-        welcome_prompt = f"Generate a short, cool, and welcoming message for a user named '{username}' who just joined the '{APP_NAME}' chat server. Keep it under 20 words. Be creative. This is a private welcome message just for them."
-        welcome_message = await call_groq_api(welcome_prompt, model="llama3-8b-8192")
+        welcome_prompt = f"Generate a short, cool, and welcoming message for a user named '{username}' who just joined the '{APP_NAME}' chat server. Keep it under 20 words. Be creative and welcoming. Your response will be displayed in a terminal."
+        welcome_message = await call_groq_api(welcome_prompt, system_prompt="You are a helpful and friendly assistant in a terminal-based chat application.", model="llama3-8b-8192")
         await send_to_user(username, {"type": "system", "text": welcome_message})
 
         # --- Main Message Loop ---

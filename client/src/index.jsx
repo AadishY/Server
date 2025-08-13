@@ -8,6 +8,7 @@ import chalk from "chalk";
 import { v4 as uuidv4 } from "uuid";
 import process from "process";
 import crypto from "crypto";
+import https from "https";
 
 const SERVER_NAME = "Akatsuki";
 // The client will use the 'wss' protocol for secure connections
@@ -15,6 +16,7 @@ const SERVER_NAME = "Akatsuki";
 // a plain 'ws' connection might be sufficient on some hosts.
 // It is best practice to use the secure protocol, 'wss'.
 const RENDER_URL = "wss://server-19jl.onrender.com/ws";
+const RENDER_STATS_URL = "https://server-19jl.onrender.com/stats";
 const DEFAULT_WS = process.env.WS_URL || RENDER_URL;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "Aadish";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Aadish20m";
@@ -30,6 +32,19 @@ const colorize = (name, color) => {
   if (color === "auto") return chalk.hex(defaultColorFor(name))(name);
   if (/^#?[0-9a-f]{6}$/i.test(color)) return chalk.hex(color.startsWith("#") ? color : `#${color}`).bold(name);
   try { return chalk.keyword(color)(name); } catch { return chalk.bold(name); }
+};
+
+const formatMessage = (text) => {
+  const parts = text.split(/(\*[^*]+\*|~[^~]+~)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <Text key={i} bold>{part.slice(1, -1)}</Text>;
+    }
+    if (part.startsWith("~") && part.endsWith("~")) {
+      return <Text key={i} strikethrough>{part.slice(1, -1)}</Text>;
+    }
+    return part;
+  });
 };
 
 // --- WebSocket Hook ---
@@ -101,21 +116,21 @@ const MessageItem = React.memo(({ m, me }) => {
       <Box borderStyle="round" borderColor="magenta" paddingX={1}>
         <Text color="magentaBright" bold>
           {`[BROADCAST from ${m.from} at ${ts}] `}
-          {m.text}
+          {formatMessage(m.text)}
         </Text>
       </Box>
     );
   }
   if (m.type === "pm") {
     const fromLabel = m.from === me ? chalk.magenta.bold(`${m.from} (you)`) : chalk.magenta.bold(m.from);
-    return <Text>{chalk.dim(`[${ts}] `)}{fromLabel}{chalk.dim(" -> ")}{chalk.yellow(m.to.join(","))}: {m.text}</Text>;
+    return <Text>{chalk.dim(`[${ts}] `)}{fromLabel}{chalk.dim(" -> ")}{chalk.yellow(m.to.join(","))}: {formatMessage(m.text)}</Text>;
   }
   if (m.from === "AI") {
-    return <Text color="blueBright">{chalk.dim(`[${ts}] `)}{chalk.bold(m.from)}: {m.text}</Text>;
+    return <Text color="blueBright">{chalk.dim(`[${ts}] `)}{chalk.bold(m.from)}: {formatMessage(m.text)}</Text>;
   }
   const mentionMe = me && m.text && m.text.includes(`@${me}`);
   const fromName = m.from ? colorize(m.from, m.color) : chalk.dim("system");
-  const body = <Text>{chalk.dim(`[${ts}] `)}{fromName}: {m.text}</Text>;
+  const body = <Text>{chalk.dim(`[${ts}] `)}{fromName}: {formatMessage(m.text)}</Text>;
   return mentionMe ? <Text backgroundColor="yellow" color="black">{body}</Text> : body;
 });
 
@@ -133,6 +148,26 @@ const LoginUI = ({ onLogin, status, error }) => {
   const [pwd, setPwd] = useState("");
   const [isAskingPwd, setIsAskingPwd] = useState(false);
   const [wakingMessageIndex, setWakingMessageIndex] = useState(0);
+  const [activeUsers, setActiveUsers] = useState(null);
+
+  useEffect(() => {
+    const fetchStats = () => {
+      https.get(RENDER_STATS_URL, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const stats = JSON.parse(data);
+            setActiveUsers(stats.active_users);
+          } catch (e) { /* ignore */ }
+        });
+      }).on('error', () => { /* ignore */ });
+    };
+
+    fetchStats();
+    const interval = setInterval(fetchStats, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (status === "connecting" || status === "reconnecting") {
@@ -165,7 +200,9 @@ const LoginUI = ({ onLogin, status, error }) => {
     <Box flexDirection="column" padding={1} borderStyle="round">
       <Box justifyContent="space-between" marginBottom={1}>
         <Text bold cyan>{SERVER_NAME}</Text>
-        <Text dimColor>Status: {status}</Text>
+        <Text dimColor>
+          {activeUsers !== null ? `${activeUsers} users online` : "..."}
+        </Text>
       </Box>
       {error && <Text color="red">{error}</Text>}
       <Box borderStyle="round" padding={1} flexDirection="column">
@@ -285,6 +322,15 @@ const Chat = ({ initialWsUrl }) => {
   const onError = useCallback((err) => pushSys(`Connection error: ${err.message || "Unknown"}`), [pushSys]);
 
   const ws = useWs(wsUrl, onOpen, onMsg, onClose, onError);
+
+  useEffect(() => {
+    if (helpVisible) {
+      const timer = setTimeout(() => {
+        setHelpVisible(false);
+      }, 60000);
+      return () => clearTimeout(timer);
+    }
+  }, [helpVisible]);
 
   const handleCommand = (text) => {
     const parts = text.trim().split(/\s+/);
@@ -420,6 +466,7 @@ const Chat = ({ initialWsUrl }) => {
             <Text><Text color="cyan">/help</Text> - Toggle this help panel.</Text>
             <Text><Text color="cyan">/exit</Text> - Quit the application.</Text>
             <Text><Text color="cyan">/e</Text> - Alias for /exit.</Text>
+            <Text>You can format messages with *bold* and ~strikethrough~.</Text>
             {authInfo.isAdmin && (
               <>
                 <Box marginTop={1} />
