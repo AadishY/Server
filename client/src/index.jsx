@@ -72,7 +72,14 @@ function useWs(url, onOpen, onMsg, onClose, onError) {
         if (mounted) onOpen?.();
       });
       ws.on("message", (raw) => {
-        try { if (mounted) onMsg?.(JSON.parse(raw.toString())); } catch (e) { /* ignore */ }
+        try {
+            const data = JSON.parse(raw.toString());
+            if (data.type === 'ping') {
+                ws.send(JSON.stringify({ type: 'pong' }));
+            } else if (mounted) {
+                onMsg?.(data);
+            }
+        } catch (e) { /* ignore */ }
       });
       ws.on("close", (code) => {
         if (!mounted) return;
@@ -221,17 +228,21 @@ const UserList = React.memo(({ users, me }) => {
   return (
     <Box width="25%" borderStyle="round" paddingX={1} flexDirection="column">
       <Text bold>Users ({users.length})</Text>
-      {users.map((u) => (
-        <Box key={u.name} flexDirection="row" flexWrap="nowrap">
-          <Box width={18} flexShrink={0} flexDirection="row">
-            {u.role === "admin" && <><Text backgroundColor="red" color="whiteBright" bold> ADMIN </Text><Text> </Text></>}
-            {u.tag && <Text backgroundColor="blue" color="whiteBright" bold> {u.tag.toUpperCase()} </Text>}
-          </Box>
-          <Box flexGrow={1}>
+      {users.map((u) => {
+        let tagElement = null;
+        if (u.tag) {
+          tagElement = <Text backgroundColor="blue" color="whiteBright" bold> {u.tag.toUpperCase()} </Text>;
+        } else if (u.role === 'admin') {
+          tagElement = <Text backgroundColor="red" color="whiteBright" bold> ADMIN </Text>;
+        }
+
+        return (
+          <Box key={u.name} flexDirection="row">
+            {tagElement && <>{tagElement}<Text> </Text></>}
             <Text>{colorize(u.name)}{u.name === me ? chalk.dim(" (you)") : ""}</Text>
           </Box>
-        </Box>
-      ))}
+        );
+      })}
     </Box>
   );
 });

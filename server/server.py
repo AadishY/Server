@@ -57,6 +57,7 @@ class User:
         self.username = username
         self.role = role
         self.session_id = uuid.uuid4().hex
+        self.last_pong_at = datetime.now(timezone.utc)
 
 connected_users: Dict[str, User] = {}
 bans: Dict[str, Optional[str]] = {}
@@ -363,6 +364,10 @@ async def handle_admin_command(admin_user: User, raw_cmd: str):
 async def handle_message(user: User, data: dict):
     typ = data.get("type")
 
+    if typ == "pong":
+        user.last_pong_at = datetime.now(timezone.utc)
+        return
+
     if typ in ("message", "pm"):
         if mute_reason := await is_muted(user.username):
             await safe_send(user.ws, {"type": "system", "text": mute_reason})
@@ -489,10 +494,39 @@ async def websocket_endpoint(ws: WebSocket):
             await broadcast(user_list_payload)
             await broadcast(leave_payload)
 
+# --- Heartbeat Task ---
+PING_INTERVAL = 30
+PONG_TIMEOUT = 65
+
+async def heartbeat_task():
+    while True:
+        await asyncio.sleep(PING_INTERVAL)
+        now = datetime.now(timezone.utc)
+
+        users_to_check = []
+        async with connected_lock:
+            users_to_check = list(connected_users.values())
+
+        for user in users_to_check:
+            if (now - user.last_pong_at).total_seconds() > PONG_TIMEOUT:
+                logging.warning(f"User {user.username} timed out due to no pong. Disconnecting.")
+                try:
+                    await user.ws.close(code=status.WS_1008_POLICY_VIOLATION, reason="Connection timed out")
+                except RuntimeError:
+                    pass # Already closed
+            else:
+                try:
+                    await user.ws.send_text(json.dumps({"type": "ping"}))
+                except (WebSocketDisconnect, ConnectionError, RuntimeError):
+                    pass
+
+
 @app.on_event("startup")
 async def startup_event():
     load_state()
     asyncio.create_task(state_cleanup_task())
+    asyncio.create_task(heartbeat_task())
+
 @app.on_event("shutdown")
 def shutdown_event(): save_state()
 @app.get("/")
