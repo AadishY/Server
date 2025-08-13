@@ -221,7 +221,10 @@ async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, m
             resp = await client.post(GROQ_ENDPOINT, headers=headers, json=payload)
             logging.info(f"Groq API Response Status: {resp.status_code}")
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            content = resp.json()["choices"][0]["message"]["content"]
+            # Strip out the <think>...</think> block before returning
+            cleaned_content = re.sub(r'<think>.*?</think>\s*', '', content, flags=re.DOTALL)
+            return cleaned_content.strip()
     except httpx.HTTPStatusError as e:
         logging.error(f"Groq API HTTP Status Error: {e.response.status_code} Body: {e.response.text}")
         return f"[AI API Error] Status {e.response.status_code}"
