@@ -61,6 +61,7 @@ class User:
 connected_users: Dict[str, User] = {}
 bans: Dict[str, Optional[str]] = {}
 mutes: Dict[str, str] = {}
+user_tags: Dict[str, str] = {} # username.lower() -> tag
 connected_lock = asyncio.Lock()
 state_lock = asyncio.Lock()
 
@@ -79,7 +80,7 @@ def save_state():
     logging.info("Attempting to save state to disk...")
     try:
         with open(TEMP_STATE_FILE, "w") as f:
-            json.dump({"bans": bans, "mutes": mutes}, f, indent=2)
+            json.dump({"bans": bans, "mutes": mutes, "tags": user_tags}, f, indent=2)
         os.replace(TEMP_STATE_FILE, STATE_FILE)
         logging.info("State saved successfully.")
     except (IOError, os.error) as e:
@@ -104,13 +105,14 @@ def cleanup_expired_state():
     if changed: save_state()
 
 def load_state():
-    global bans, mutes
+    global bans, mutes, user_tags
     if not os.path.exists(STATE_FILE): return
     try:
         with open(STATE_FILE, "r") as f:
             data = json.load(f)
             bans = data.get("bans", {})
             mutes = data.get("mutes", {})
+            user_tags = data.get("tags", {})
             cleanup_expired_state()
             logging.info("Server state loaded successfully.")
     except (IOError, json.JSONDecodeError) as e:
@@ -192,7 +194,7 @@ async def send_to_user(username: str, obj: dict) -> bool:
     return False
 
 def get_users_list() -> List[Dict[str, Any]]:
-    return [{"name": u.username, "role": u.role} for u in connected_users.values()]
+    return [{"name": u.username, "role": u.role, "tag": user_tags.get(u.username.lower())} for u in connected_users.values()]
 
 # --- Groq AI Helper ---
 async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, model: str = DEFAULT_MODEL) -> str:
@@ -270,9 +272,32 @@ async def handle_admin_command(admin_user: User, raw_cmd: str):
         await broadcast({"type": "clear_broadcast"})
         return
 
+    if cmd == "/tag":
+        target_users, tag_parts = parse_command_args(args)
+        if not target_users or not tag_parts or not tag_parts[0].startswith('--'):
+            return await safe_send(admin_user.ws, {"type": "system", "text": "Usage: /tag @user --tagname"})
+        tag = tag_parts[0][2:]
+        for username in target_users:
+            user_tags[username.lower()] = tag
+        changed_state = True
+        await broadcast({"type": "users", "users": get_users_list()})
+
+    if cmd == "/removetag":
+        target_users, _ = parse_command_args(args)
+        if not target_users:
+            return await safe_send(admin_user.ws, {"type": "system", "text": "Usage: /removetag @user"})
+        for username in target_users:
+            if username.lower() in user_tags:
+                del user_tags[username.lower()]
+                changed_state = True
+        await broadcast({"type": "users", "users": get_users_list()})
+
     target_users, remaining_args = parse_command_args(args)
     if not target_users:
-        return await safe_send(admin_user.ws, {"type": "system", "text": "You must specify at least one user with @mention."})
+        if cmd in ("/kick", "/ban", "/unban", "/mute", "/unmute"):
+            return await safe_send(admin_user.ws, {"type": "system", "text": "You must specify at least one user with @mention."})
+        else:
+            return # Other commands might not need a user
 
     duration_min = int(remaining_args.pop(0)) if remaining_args and remaining_args[0].isdigit() else None
     reason = " ".join(remaining_args) or "No reason specified."
@@ -416,7 +441,7 @@ async def websocket_endpoint(ws: WebSocket):
             users_list = get_users_list()
 
         await safe_send(ws, {"type": "auth_ok", "username": user.username, "role": user.role})
-        await broadcast({"type": "user_join", "user": {"name": user.username, "role": user.role}}, exclude_ids={user.session_id})
+        await broadcast({"type": "user_join", "user": {"name": user.username, "role": user.role, "tag": user_tags.get(user.username.lower())}}, exclude_ids={user.session_id})
         await safe_send(ws, {"type": "users", "users": users_list})
 
         if LATEST_BROADCAST:
@@ -434,13 +459,12 @@ async def websocket_endpoint(ws: WebSocket):
         if user:
             async with connected_lock:
                 if user.session_id in connected_users: del connected_users[user.session_id]
-            connections_to_send = []
-            async with connected_lock:
-                for u in connected_users.values(): connections_to_send.append(u.ws)
 
-            tasks = [safe_send(ws, {"type": "user_leave", "user": {"name": user.username, "role": user.role}}) for ws in connections_to_send]
-            tasks.append(safe_send(ws, {"type": "system", "text": f"{user.username} has left the chat."}))
-            if tasks: await asyncio.gather(*tasks)
+            user_list_payload = {"type": "users", "users": get_users_list()}
+            leave_payload = {"type": "system", "text": f"{user.username} has left the chat."}
+
+            await broadcast(user_list_payload)
+            await broadcast(leave_payload)
 
 @app.on_event("startup")
 async def startup_event():
