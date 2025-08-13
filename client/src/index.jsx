@@ -21,9 +21,11 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Aadish20m";
 const nowISO = () => new Date().toISOString();
 const shortTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString();
 
+// New color palette and selection logic
 const DULL_COLORS = [
-    '#8FBC8F', '#F08080', '#20B2AA', '#87CEEB', '#9370DB',
-    '#D2B48C', '#F4A460', '#FA8072', '#AFEEEE', '#B0E0E6'
+    '#8A2BE2', '#5F9EA0', '#D2691E', '#FF7F50', '#6495ED',
+    '#DC143C', '#00FFFF', '#00008B', '#B8860B', '#006400',
+    '#8B008B', '#556B2F', '#FF8C00', '#9932CC', '#8B0000'
 ];
 
 const defaultColorFor = (name) => {
@@ -449,7 +451,7 @@ const Chat = ({ initialWsUrl }) => {
             <Text bold>Commands</Text>
             <Text><Text color="cyan">/nick &lt;name&gt;</Text> - Change your nickname</Text>
             <Text><Text color="cyan">/pm, /dm &lt;@user...&gt; &lt;msg&gt;</Text> - Send a private message</Text>
-            <Text><Text color="cyan">/ai [--model &lt;name&gt;] &lt;prompt&gt;</Text> - Ask the AI a question</Text>
+            <Text><Text color="cyan">/ai [--&lt;model&gt;] &lt;prompt&gt;</Text> - Ask the AI a question</Text>
             <Text dimColor>  Models: gpt, llama, deepseek, qwen, compound (default)</Text>
             <Text><Text color="cyan">/clear</Text> - Clear your local message view</Text>
             <Text><Text color="cyan">/help</Text> - Toggle this help panel</Text>

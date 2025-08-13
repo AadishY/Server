@@ -49,6 +49,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # --- State Management ---
 STATE_FILE = "server_state.json"
 TEMP_STATE_FILE = "server_state.json.tmp"
+LATEST_BROADCAST: Optional[Dict[str, Any]] = None
 
 class User:
     def __init__(self, websocket: WebSocket, username: str, role: str):
@@ -234,6 +235,7 @@ def parse_command_args(args: List[str]) -> (Set[str], List[str]):
     return users, remaining_args
 
 async def handle_admin_command(admin_user: User, raw_cmd: str):
+    global LATEST_BROADCAST
     parts = raw_cmd.strip().split()
     cmd, args = parts[0].lower(), parts[1:]
     changed_state = False
@@ -248,6 +250,7 @@ async def handle_admin_command(admin_user: User, raw_cmd: str):
         return
 
     if cmd == "/clearall":
+        LATEST_BROADCAST = None
         await broadcast({"type": "clear_chat"})
         await broadcast({"type": "system", "text": f"Chat history cleared by {admin_user.username}."})
         return
@@ -255,10 +258,14 @@ async def handle_admin_command(admin_user: User, raw_cmd: str):
     if cmd in ("/broadcast", "/b"):
         message = " ".join(args)
         if not message: await safe_send(admin_user.ws, {"type": "system", "text": "Usage: /broadcast <message>"})
-        else: await broadcast({"type": "broadcast", "from": admin_user.username, "text": message, "ts": ts_iso()})
+        else:
+            broadcast_payload = {"type": "broadcast", "from": admin_user.username, "text": message, "ts": ts_iso()}
+            LATEST_BROADCAST = broadcast_payload
+            await broadcast(broadcast_payload)
         return
 
     if cmd == "/clearbroadcast":
+        LATEST_BROADCAST = None
         await broadcast({"type": "clear_broadcast"})
         return
 
@@ -411,8 +418,11 @@ async def websocket_endpoint(ws: WebSocket):
         await broadcast({"type": "user_join", "user": {"name": user.username, "role": user.role}}, exclude_ids={user.session_id})
         await safe_send(ws, {"type": "users", "users": users_list})
 
+        if LATEST_BROADCAST:
+            await safe_send(ws, LATEST_BROADCAST)
+
         welcome_system_prompt = f"You are a witty and welcoming chatbot for the '{APP_NAME}' chat server. Your task is to generate a very short, cool, and slightly mysterious welcome message for a new user named '{user.username}'. Keep it under 15 words. Be creative."
-        welcome_message = await call_groq_api(f"A user named {user.username} has joined.", system_prompt=welcome_system_prompt, model="llama3-8b-instant")
+        welcome_message = await call_groq_api(f"A user named {user.username} has joined.", system_prompt=welcome_system_prompt, model="llama-3.1-8b-instant")
         await safe_send(ws, {"type": "system", "text": welcome_message})
 
         while True:
