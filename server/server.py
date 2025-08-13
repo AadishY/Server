@@ -29,6 +29,16 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Aadish20m")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
+# --- AI Model Configuration ---
+MODEL_ALIASES = {
+    "gpt": "openai/gpt-oss-120b",
+    "llama": "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "deepseek": "deepseek-r1-distill-llama-70b",
+    "qwen": "qwen/qwen3-32b",
+    "compound": "compound-beta-oss",
+}
+DEFAULT_MODEL = "compound-beta-oss"
+
 # --- Whitelist Configuration ---
 WHITELISTED_USERS = {"Prakhar", "Priyanshu", "Summit", "Aditya", "Yuvraj", "Yash"}
 TEMPORARY_WHITELIST = set()
@@ -82,17 +92,14 @@ async def async_save_state():
 def cleanup_expired_state():
     now = datetime.now(timezone.utc)
     changed = False
-
     for u, exp_str in list(bans.items()):
         if exp_str and (expiry := ts_from_iso(exp_str)) and expiry <= now:
             del bans[u]
             changed = True
-
     for u, exp_str in list(mutes.items()):
         if (expiry := ts_from_iso(exp_str)) and expiry <= now:
             del mutes[u]
             changed = True
-
     if changed: save_state()
 
 def load_state():
@@ -118,7 +125,7 @@ async def state_cleanup_task():
         except Exception as e:
             logging.error(f"Error in state_cleanup_task: {e}", exc_info=True)
 
-# --- Business Logic Helpers (now async and case-insensitive) ---
+# --- Business Logic Helpers ---
 async def is_banned(username: str) -> Optional[str]:
     username_lower = username.lower()
     for ban_user, ban_expiry_val in bans.items():
@@ -182,20 +189,29 @@ def get_users_list() -> List[Dict[str, Any]]:
     return [{"name": u.username, "role": u.role} for u in connected_users.values()]
 
 # --- Groq AI Helper ---
-async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, model: str = "llama3-8b-8192") -> str:
+async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, model: str = DEFAULT_MODEL) -> str:
     if not GROQ_API_KEY:
         await asyncio.sleep(0.5)
-        return f"[Simulated AI Response] You asked: '{user_prompt[:100]}...'"
-    system_prompt = system_prompt or "You are a helpful assistant..."
+        return f"[Simulated AI Response for {model}] You asked: '{user_prompt[:100]}...'"
+
+    system_prompt = system_prompt or "You are a helpful assistant."
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-    payload = {"messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}], "model": model}
+
+    payload = {
+        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        "model": model
+    }
+
+    if model == "openai/gpt-oss-120b":
+        payload["tools"] = [{"type": "browser_search"}, {"type": "code_interpreter"}]
+
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(GROQ_ENDPOINT, headers=headers, json=payload)
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
     except httpx.HTTPStatusError as e: return f"[AI API Error] Status {e.response.status_code}"
-    except Exception: return "[AI API Error] Could not connect."
+    except Exception as e: return f"[AI API Error] Could not connect: {e}"
 
 # --- Command Handlers ---
 def parse_command_args(args: List[str]) -> (Set[str], List[str]):
@@ -305,10 +321,24 @@ async def handle_message(user: User, data: dict):
                     await safe_send(user.ws, {"type": "system", "text": f"User '{r_name}' not found."})
             await safe_send(user.ws, pm_payload)
     elif typ == "ai":
-        prompt = data.get("text", "")
-        if not prompt: return
-        await broadcast({"type": "system", "text": f"{user.username} is asking the AI a question..."})
-        response = await call_groq_api(prompt)
+        prompt_parts = data.get("text", "").split()
+        model_alias = "compound"
+        final_prompt_list = []
+
+        if len(prompt_parts) > 2 and prompt_parts[0] == "--model":
+            model_alias = prompt_parts[1].lower()
+            final_prompt_list = prompt_parts[2:]
+        else:
+            final_prompt_list = prompt_parts
+
+        model_id = MODEL_ALIASES.get(model_alias, DEFAULT_MODEL)
+        prompt_text = " ".join(final_prompt_list)
+
+        if not prompt_text:
+            return await safe_send(user.ws, {"type": "system", "text": "Usage: /ai [--model <name>] <prompt>"})
+
+        await broadcast({"type": "system", "text": f"{user.username} is asking the AI ({model_alias})..."})
+        response = await call_groq_api(prompt_text, model=model_id)
         await broadcast({"type": "ai_resp", "id": str(uuid.uuid4()), "from": "AI", "text": response, "ts": ts_iso()})
 
 @app.get("/stats")

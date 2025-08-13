@@ -439,7 +439,8 @@ const Chat = ({ initialWsUrl }) => {
             <Text bold>Commands</Text>
             <Text><Text color="cyan">/nick &lt;name&gt;</Text> - Change your nickname</Text>
             <Text><Text color="cyan">/pm, /dm &lt;@user...&gt; &lt;msg&gt;</Text> - Send a private message</Text>
-            <Text><Text color="cyan">/ai &lt;prompt&gt;</Text> - Ask the AI a question</Text>
+            <Text><Text color="cyan">/ai [--model &lt;name&gt;] &lt;prompt&gt;</Text> - Ask the AI a question</Text>
+            <Text dimColor>  Models: gpt, llama, deepseek, qwen, compound (default)</Text>
             <Text><Text color="cyan">/clear</Text> - Clear your local message view</Text>
             <Text><Text color="cyan">/help</Text> - Toggle this help panel</Text>
             <Text><Text color="cyan">/exit, /e, /quit</Text> - Quit the application</Text>
