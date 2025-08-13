@@ -1,6 +1,6 @@
 {
-  "name": "akatsuki-cli-chat",
-  "version": "0.1.0",
+  "name": "aadish-server",
+  "version": "1.0.0",
   "type": "module",
   "description": "Ink CLI client for Akatsuki single-room chat",
   "main": "src/index.jsx",
@@ -9,7 +9,7 @@
     "start": "tsx src/index.jsx"
   },
   "bin": {
-    "akatsuki": "./src/index.jsx"
+    "aadish": "./src/index.jsx"
   },
   "author": "You",
   "license": "MIT",
@@ -19,7 +19,8 @@
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
     "uuid": "^9.0.1",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "https": "^1.0.0"
   },
   "devDependencies": {
     "esbuild": "^0.25.8",
