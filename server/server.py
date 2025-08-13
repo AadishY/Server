@@ -274,23 +274,46 @@ async def handle_admin_command(admin_user: User, raw_cmd: str):
 
     if cmd == "/tag":
         target_users, tag_parts = parse_command_args(args)
-        if not target_users or not tag_parts or not tag_parts[0].startswith('--'):
+        tag_arg = next((arg for arg in tag_parts if arg.startswith('--')), None)
+
+        if not target_users or not tag_arg:
             return await safe_send(admin_user.ws, {"type": "system", "text": "Usage: /tag @user --tagname"})
-        tag = tag_parts[0][2:]
+
+        tag = tag_arg[2:]
+        if not tag:
+             return await safe_send(admin_user.ws, {"type": "system", "text": "Tag name cannot be empty."})
+
         for username in target_users:
             user_tags[username.lower()] = tag
-        changed_state = True
-        await broadcast({"type": "users", "users": get_users_list()})
+            target_user_obj = await find_user_by_name(username)
+            role = target_user_obj.role if target_user_obj else "user"
+
+            await broadcast({"type": "system", "text": f"{admin_user.username} gave the tag '{tag}' to {username}."})
+            await broadcast({"type": "user_update", "user": {"name": username, "role": role, "tag": tag}})
+
+        if target_users:
+            await async_save_state()
+        return
 
     if cmd == "/removetag":
         target_users, _ = parse_command_args(args)
         if not target_users:
             return await safe_send(admin_user.ws, {"type": "system", "text": "Usage: /removetag @user"})
+
+        a_tag_was_removed = False
         for username in target_users:
             if username.lower() in user_tags:
                 del user_tags[username.lower()]
-                changed_state = True
-        await broadcast({"type": "users", "users": get_users_list()})
+                a_tag_was_removed = True
+                target_user_obj = await find_user_by_name(username)
+                role = target_user_obj.role if target_user_obj else "user"
+
+                await broadcast({"type": "system", "text": f"{admin_user.username} removed the tag from {username}."})
+                await broadcast({"type": "user_update", "user": {"name": username, "role": role, "tag": None}})
+
+        if a_tag_was_removed:
+            await async_save_state()
+        return
 
     target_users, remaining_args = parse_command_args(args)
     if not target_users:

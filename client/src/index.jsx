@@ -222,9 +222,14 @@ const UserList = React.memo(({ users, me }) => {
     <Box width="25%" borderStyle="round" paddingX={1} flexDirection="column">
       <Text bold>Users ({users.length})</Text>
       {users.map((u) => (
-        <Box key={u.name}>
-          <Text>{u.role === "admin" ? <Text backgroundColor="red" color="whiteBright" bold> ADMIN </Text> : "       "}</Text>
-          <Text>{' '}{colorize(u.name)}{u.name === me ? chalk.dim(" (you)") : ""}</Text>
+        <Box key={u.name} flexDirection="row" flexWrap="nowrap">
+          <Box width={18} flexShrink={0} flexDirection="row">
+            {u.role === "admin" && <><Text backgroundColor="red" color="whiteBright" bold> ADMIN </Text><Text> </Text></>}
+            {u.tag && <Text backgroundColor="blue" color="whiteBright" bold> {u.tag.toUpperCase()} </Text>}
+          </Box>
+          <Box flexGrow={1}>
+            <Text>{colorize(u.name)}{u.name === me ? chalk.dim(" (you)") : ""}</Text>
+          </Box>
         </Box>
       ))}
     </Box>
@@ -294,6 +299,11 @@ const Chat = ({ initialWsUrl }) => {
       case "user_leave":
         setUsers(u => u.filter(x => x.name !== data.user.name));
         break;
+      case "user_update":
+        setUsers(currentUsers =>
+          currentUsers.map(u => (u.name === data.user.name ? data.user : u))
+        );
+        break;
       case "clear_chat":
         setMessages([]);
         setPinnedMessage(null);
@@ -359,8 +369,7 @@ const Chat = ({ initialWsUrl }) => {
         setHelpVisible(v => !v);
         return;
       case "/clear":
-        if (currentAuth.isAdmin) sent = ws.send({ type: "command", raw: "/clearall" });
-        else setMessages([]);
+        setMessages([]);
         return;
       case "/nick":
         if (!args[0]) { pushSys("Usage: /nick <newname>"); return; }
@@ -407,8 +416,6 @@ const Chat = ({ initialWsUrl }) => {
   useInput((input, key) => {
     if (key.ctrl && input === "c") { ws.close(); exit(); }
     if (key.escape) setHelpVisible(false);
-    if (key.upArrow) setScrollOffset(o => Math.min(messages.length - 1, o + 1));
-    if (key.downArrow) setScrollOffset(o => Math.max(0, o - 1));
   }, { isActive: !!authInfo });
 
   const handleLogin = useCallback((loginData) => {
@@ -467,6 +474,8 @@ const Chat = ({ initialWsUrl }) => {
                 <Text><Text color="cyan">/unban &lt;@user...&gt;</Text> - Unban users</Text>
                 <Text><Text color="cyan">/mute &lt;@user...&gt; [min]</Text> - Mute users</Text>
                 <Text><Text color="cyan">/unmute &lt;@user...&gt;</Text> - Unmute users</Text>
+                <Text><Text color="cyan">/tag &lt;@user&gt; --&lt;tag&gt;</Text> - Assign a custom tag to a user</Text>
+                <Text><Text color="cyan">/removetag &lt;@user...&gt;</Text> - Remove a user's custom tag</Text>
                 <Text><Text color="cyan">/broadcast, /b &lt;msg&gt;</Text> - Send a broadcast message</Text>
                 <Text><Text color="cyan">/clearbroadcast</Text> - Clear the pinned broadcast message</Text>
                 <Text><Text color="cyan">/clearall</Text> - Clear chat history for all users</Text>
