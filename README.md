@@ -12,7 +12,7 @@ Akatsuki is a simple, ephemeral, single-room WebSocket chat server written in Py
 - Admin broadcast functionality.
 - Command shortcuts for ease of use.
 - Terminal UI with a user list and "server waking up" animation.
-- Markdown-like text formatting for `*bold*` and `~strikethrough~`.
+- Markdown-like text formatting for `*bold*`, `~strikethrough~`, and more.
 
 ## Setup and Installation
 
@@ -69,31 +69,37 @@ The client is a terminal application built with React and Ink.
 
 ### User Commands
 
-| Command | Alias | Description |
-| --- | --- | --- |
-| `/nick <name>` | | Change your nickname. |
-| `/color [color]` | `/c` | Set your username color. Supports hex codes or color names. If no color is provided, a random one is chosen. |
-| `/pm <@user...>` | `/dm` | Send a private message to one or more users. |
-| `/ai <prompt>` | | Ask the AI a question. |
-| `/clear` | | Clear the messages in your local view. |
-| `/help` | | Toggle the help panel. |
-| `/exit` | `/e` | Quit the application. |
+| Command | Alias | Description | Example |
+| --- | --- | --- | --- |
+| `/nick <name>` | | Change your nickname. | `/nick satoshi` |
+| `/color [color]` | `/c` | Set your username color. Supports hex codes or color names. If no color is provided, a random one is chosen. | `/color red`, `/c #ff00ff` |
+| `/pm <@user...>` | `/dm` | Send a private message to one or more users. | `/pm @bob @alice hello!` |
+| `/ai <prompt>` | | Ask the AI a question. | `/ai what is the meaning of life?` |
+| `/clear` | | Clear the messages in your local view. | `/clear` |
+| `/help` | | Toggle the help panel. | `/help` |
+| `/exit` | `/e` | Quit the application. | `/e` |
 
 ### Admin Commands
 
-| Command | Alias | Description |
-| --- | --- | --- |
-| `/kick <user> [reason]` | | Kick a user from the chat. |
-| `/ban <user> [mins] [reason]` | | Ban a user. If `mins` is provided, it's a temporary ban. |
-| `/unban <user>` | | Unban a user. |
-| `/mute <user> [mins]` | | Mute a user. Default is 10 minutes. |
-| `/unmute <user>` | | Unmute a user. |
-| `/broadcast <message>` | `/b` | Send a broadcast message to all users. |
-| `/clearall` | | Clear the chat history for all users. |
+| Command | Alias | Description | Example |
+| --- | --- | --- | --- |
+| `/kick <@user...>` | | Kick one or more users from the chat. | `/kick @mallory` |
+| `/ban <@user...>` | | Ban one or more users. | `/ban @eve` |
+| `/unban <@user...>` | | Unban one or more users. | `/unban @eve` |
+| `/mute <@user...>` | | Mute one or more users for 10 minutes. | `/mute @bob` |
+| `/unmute <@user...>` | | Unmute one or more users. | `/unmute @bob` |
+| `/broadcast <message>` | `/b` | Send a broadcast message to all users. | `/b System will restart in 5 minutes.` |
+| `/clearall` | | Clear the chat history for all users. | `/clearall` |
 
 ### Text Formatting
 
 You can format your messages with the following markdown-like syntax:
 
--   `*text*` for **bold** text.
--   `~text~` for ~~strikethrough~~ text.
+| Format | Example | Renders as |
+| --- | --- | --- |
+| `*text*` | `*bold*` | **bold** |
+| `_text_` | `_italic_` | *italic* |
+| `__text__` | `__underline__` | <u>underline</u> |
+| `~text~` | `~strikethrough~` | ~~strikethrough~~ |
+| `|text|` | `|obfuscated|` | ██████████ |
+| `> text` | `> blockquote` | > blockquote |

@@ -38,8 +38,6 @@ class User:
         self.role = role
         self.color: Optional[str] = None
         self.muted_until: Optional[datetime] = None
-        self.msg_timestamps: List[float] = []
-        self.ai_req_timestamps: List[float] = []
 
 connected_users: Dict[str, User] = {}  # session_id -> User
 bans: Dict[str, Optional[str]] = {}
@@ -188,9 +186,22 @@ async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, m
         return "[AI API Error] Could not connect to AI service."
 
 # --- Command Handlers ---
+def parse_command_args(args: List[str]) -> (Set[str], List[str]):
+    users = set()
+    remaining_args = []
+    for arg in args:
+        if arg.startswith('@'):
+            users.add(arg[1:])
+        else:
+            remaining_args.append(arg)
+    return users, remaining_args
+
 async def handle_admin_command(admin_user: User, raw_cmd: str):
-    # ...
-    pass
+    parts = raw_cmd.strip().split()
+    cmd = parts[0].lower()
+    args = parts[1:]
+
+    # ... (rest of the commands)
 
 async def handle_message(user: User, data: dict):
     # ...

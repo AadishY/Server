@@ -35,16 +35,28 @@ const colorize = (name, color) => {
 };
 
 const formatMessage = (text) => {
-  const parts = text.split(/(\*[^*]+\*|~[^~]+~)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("*") && part.endsWith("*")) {
-      return <Text key={i} bold>{part.slice(1, -1)}</Text>;
-    }
-    if (part.startsWith("~") && part.endsWith("~")) {
-      return <Text key={i} strikethrough>{part.slice(1, -1)}</Text>;
-    }
-    return part;
-  });
+    const parts = text.split(/(\*[^*]+\*|~[^~]+~|_[^_]+_|__[^_]+__|\|[^|]+\||^>.*)/gm);
+    return parts.map((part, i) => {
+        if (part.startsWith("*") && part.endsWith("*")) {
+            return <Text key={i} bold>{part.slice(1, -1)}</Text>;
+        }
+        if (part.startsWith("~") && part.endsWith("~")) {
+            return <Text key={i} strikethrough>{part.slice(1, -1)}</Text>;
+        }
+        if (part.startsWith("_") && part.endsWith("_")) {
+            return <Text key={i} italic>{part.slice(1, -1)}</Text>;
+        }
+        if (part.startsWith("__") && part.endsWith("__")) {
+            return <Text key={i} underline>{part.slice(2, -2)}</Text>;
+        }
+        if (part.startsWith("|") && part.endsWith("|")) {
+            return <Text key={i} backgroundColor="black" color="black">{part.slice(1, -1)}</Text>;
+        }
+        if (part.startsWith(">")) {
+            return <Text key={i} dimColor italic> {part}</Text>;
+        }
+        return part;
+    });
 };
 
 // --- WebSocket Hook ---
@@ -466,16 +478,16 @@ const Chat = ({ initialWsUrl }) => {
             <Text><Text color="cyan">/help</Text> - Toggle this help panel.</Text>
             <Text><Text color="cyan">/exit</Text> - Quit the application.</Text>
             <Text><Text color="cyan">/e</Text> - Alias for /exit.</Text>
-            <Text>You can format messages with *bold* and ~strikethrough~.</Text>
+            <Text>You can format messages with *bold*, _italic_, __underline__, ~strikethrough~, |obfuscated|, and > blockquote.</Text>
             {authInfo.isAdmin && (
               <>
                 <Box marginTop={1} />
                 <Text bold>Admin Commands</Text>
-                <Text><Text color="cyan">/kick &lt;user&gt; [reason]</Text> - Kick a user.</Text>
-                <Text><Text color="cyan">/ban &lt;user&gt; [minutes] [reason]</Text> - Ban a user.</Text>
-                <Text><Text color="cyan">/unban &lt;user&gt;</Text> - Unban a user.</Text>
-                <Text><Text color="cyan">/mute &lt;user&gt; [minutes]</Text> - Mute a user.</Text>
-                <Text><Text color="cyan">/unmute &lt;user&gt;</Text> - Unmute a user.</Text>
+                <Text><Text color="cyan">/kick &lt;@user...&gt; [reason]</Text> - Kick users.</Text>
+                <Text><Text color="cyan">/ban &lt;@user...&gt; [minutes] [reason]</Text> - Ban users.</Text>
+                <Text><Text color="cyan">/unban &lt;@user...&gt;</Text> - Unban users.</Text>
+                <Text><Text color="cyan">/mute &lt;@user...&gt; [minutes]</Text> - Mute users.</Text>
+                <Text><Text color="cyan">/unmute &lt;@user...&gt;</Text> - Unmute users.</Text>
                 <Text><Text color="cyan">/broadcast &lt;msg&gt;</Text> - Send a broadcast message.</Text>
                 <Text><Text color="cyan">/b &lt;msg&gt;</Text> - Alias for /broadcast.</Text>
               </>
