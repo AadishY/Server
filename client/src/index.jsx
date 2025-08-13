@@ -21,7 +21,6 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Aadish20m";
 const nowISO = () => new Date().toISOString();
 const shortTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString();
 
-// New color palette and selection logic
 const DULL_COLORS = [
     '#8FBC8F', '#F08080', '#20B2AA', '#87CEEB', '#9370DB',
     '#D2B48C', '#F4A460', '#FA8072', '#AFEEEE', '#B0E0E6'
@@ -122,7 +121,7 @@ const MessageItem = React.memo(({ m, me }) => {
     return (
       <Box borderStyle="round" borderColor="magenta" paddingX={1}>
         <Text>
-            <Text dimColor>{`[BROADCAST from ${m.from} at ${ts}] `}</Text>
+            <Text dimColor>{`[BCAST from ${m.from}] `}</Text>
             <Text color="magentaBright" bold>{formatMessage(m.text)}</Text>
         </Text>
       </Box>

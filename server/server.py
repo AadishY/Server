@@ -35,9 +35,9 @@ MODEL_ALIASES = {
     "llama": "meta-llama/llama-4-maverick-17b-128e-instruct",
     "deepseek": "deepseek-r1-distill-llama-70b",
     "qwen": "qwen/qwen3-32b",
-    "compound": "compound-beta", # Corrected from compound-beta-oss
+    "compound": "compound-beta",
 }
-DEFAULT_MODEL = "compound-beta" # Corrected from compound-beta-oss
+DEFAULT_MODEL = "compound-beta"
 
 # --- Whitelist Configuration ---
 WHITELISTED_USERS = {"Prakhar", "Priyanshu", "Summit", "Aditya", "Yuvraj", "Yash"}
@@ -200,7 +200,6 @@ async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, m
         return f"[Simulated AI Response for {model}] You asked: '{user_prompt[:100]}...'"
 
     logging.info(f"Making Groq API call. Model: {model}, Endpoint: {GROQ_ENDPOINT}")
-    system_prompt = system_prompt or "You are a helpful assistant."
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
 
     payload = {
@@ -340,23 +339,25 @@ async def handle_message(user: User, data: dict):
             await safe_send(user.ws, pm_payload)
     elif typ == "ai":
         prompt_parts = data.get("text", "").split()
+        model_id = DEFAULT_MODEL
         model_alias = "compound"
-        final_prompt_list = []
+        final_prompt_list = prompt_parts
 
-        if len(prompt_parts) > 2 and prompt_parts[0] == "--model":
-            model_alias = prompt_parts[1].lower()
-            final_prompt_list = prompt_parts[2:]
-        else:
-            final_prompt_list = prompt_parts
+        if prompt_parts and prompt_parts[0].startswith('--'):
+            flag = prompt_parts[0][2:].lower()
+            if flag in MODEL_ALIASES:
+                model_alias = flag
+                model_id = MODEL_ALIASES[flag]
+                final_prompt_list = prompt_parts[1:]
 
-        model_id = MODEL_ALIASES.get(model_alias, DEFAULT_MODEL)
         prompt_text = " ".join(final_prompt_list)
 
         if not prompt_text:
-            return await safe_send(user.ws, {"type": "system", "text": "Usage: /ai [--model <name>] <prompt>"})
+            return await safe_send(user.ws, {"type": "system", "text": "Usage: /ai [--model_alias] <prompt>"})
 
         await broadcast({"type": "system", "text": f"{user.username} is asking the AI ({model_alias})..."})
-        response = await call_groq_api(prompt_text, model=model_id)
+        system_prompt = "You are a helpful and concise assistant integrated into a terminal-based chat application. Your answers should be brief and to the point. Use markdown for formatting if necessary."
+        response = await call_groq_api(prompt_text, system_prompt=system_prompt, model=model_id)
         await broadcast({"type": "ai_resp", "id": str(uuid.uuid4()), "from": "AI", "text": response, "ts": ts_iso()})
 
 @app.get("/stats")
@@ -410,8 +411,8 @@ async def websocket_endpoint(ws: WebSocket):
         await broadcast({"type": "user_join", "user": {"name": user.username, "role": user.role}}, exclude_ids={user.session_id})
         await safe_send(ws, {"type": "users", "users": users_list})
 
-        welcome_prompt = f"Generate a short, cool, welcoming message for '{user.username}' joining '{APP_NAME}' chat."
-        welcome_message = await call_groq_api(welcome_prompt)
+        welcome_system_prompt = f"You are a witty and welcoming chatbot for the '{APP_NAME}' chat server. Your task is to generate a very short, cool, and slightly mysterious welcome message for a new user named '{user.username}'. Keep it under 15 words. Be creative."
+        welcome_message = await call_groq_api(f"A user named {user.username} has joined.", system_prompt=welcome_system_prompt, model="llama3-8b-instant")
         await safe_send(ws, {"type": "system", "text": welcome_message})
 
         while True:
