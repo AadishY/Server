@@ -20,10 +20,18 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Aadish20m";
 // --- Helper Functions ---
 const nowISO = () => new Date().toISOString();
 const shortTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString();
-const md5hex = (s) => crypto.createHash("md5").update(s || "").digest("hex").slice(0, 6);
-const defaultColorFor = (name) => `#${md5hex(name)}`;
 
-// colorize function is now simplified
+// New color palette and selection logic
+const DULL_COLORS = [
+    '#8FBC8F', '#F08080', '#20B2AA', '#87CEEB', '#9370DB',
+    '#D2B48C', '#F4A460', '#FA8072', '#AFEEEE', '#B0E0E6'
+];
+
+const defaultColorFor = (name) => {
+    const hash = crypto.createHash('md5').update(name || "").digest();
+    return DULL_COLORS[hash[0] % DULL_COLORS.length];
+};
+
 const colorize = (name) => {
   if (!name) return chalk.bold("system");
   return chalk.hex(defaultColorFor(name)).bold(name);
@@ -113,9 +121,9 @@ const MessageItem = React.memo(({ m, me }) => {
   if (m.type === "broadcast") {
     return (
       <Box borderStyle="round" borderColor="magenta" paddingX={1}>
-        <Text bold>
+        <Text>
             <Text dimColor>{`[BROADCAST from ${m.from} at ${ts}] `}</Text>
-            <Text color="magentaBright">{formatMessage(m.text)}</Text>
+            <Text color="magentaBright" bold>{formatMessage(m.text)}</Text>
         </Text>
       </Box>
     );

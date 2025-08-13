@@ -35,9 +35,9 @@ MODEL_ALIASES = {
     "llama": "meta-llama/llama-4-maverick-17b-128e-instruct",
     "deepseek": "deepseek-r1-distill-llama-70b",
     "qwen": "qwen/qwen3-32b",
-    "compound": "compound-beta-oss",
+    "compound": "compound-beta", # Corrected from compound-beta-oss
 }
-DEFAULT_MODEL = "compound-beta-oss"
+DEFAULT_MODEL = "compound-beta" # Corrected from compound-beta-oss
 
 # --- Whitelist Configuration ---
 WHITELISTED_USERS = {"Prakhar", "Priyanshu", "Summit", "Aditya", "Yuvraj", "Yash"}
@@ -174,9 +174,14 @@ async def safe_send(ws: WebSocket, obj: dict):
 
 async def broadcast(obj: dict, exclude_ids: Optional[Set[str]] = None):
     exclude = exclude_ids or set()
+    connections_to_send = []
     async with connected_lock:
-        tasks = [safe_send(u.ws, obj) for sid, u in connected_users.items() if sid not in exclude]
-        if tasks: await asyncio.gather(*tasks)
+        for sid, u in connected_users.items():
+            if sid not in exclude:
+                connections_to_send.append(u.ws)
+
+    tasks = [safe_send(ws, obj) for ws in connections_to_send]
+    if tasks: await asyncio.gather(*tasks)
 
 async def send_to_user(username: str, obj: dict) -> bool:
     user = await find_user_by_name(username)
@@ -194,6 +199,7 @@ async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, m
         await asyncio.sleep(0.5)
         return f"[Simulated AI Response for {model}] You asked: '{user_prompt[:100]}...'"
 
+    logging.info(f"Making Groq API call. Model: {model}, Endpoint: {GROQ_ENDPOINT}")
     system_prompt = system_prompt or "You are a helpful assistant."
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
 
@@ -205,13 +211,20 @@ async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, m
     if model == "openai/gpt-oss-120b":
         payload["tools"] = [{"type": "browser_search"}, {"type": "code_interpreter"}]
 
+    logging.info(f"Request Payload: {json.dumps(payload)}")
+
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(GROQ_ENDPOINT, headers=headers, json=payload)
+            logging.info(f"Groq API Response Status: {resp.status_code}")
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
-    except httpx.HTTPStatusError as e: return f"[AI API Error] Status {e.response.status_code}"
-    except Exception as e: return f"[AI API Error] Could not connect: {e}"
+    except httpx.HTTPStatusError as e:
+        logging.error(f"Groq API HTTP Status Error: {e.response.status_code} Body: {e.response.text}")
+        return f"[AI API Error] Status {e.response.status_code}"
+    except Exception as e:
+        logging.error(f"Groq API call failed: {e}", exc_info=True)
+        return f"[AI API Error] Could not connect: {e}"
 
 # --- Command Handlers ---
 def parse_command_args(args: List[str]) -> (Set[str], List[str]):
@@ -310,13 +323,9 @@ async def handle_message(user: User, data: dict):
         if new_nick and 1 <= len(new_nick) <= 32 and not await is_username_in_use(new_nick) and new_nick.lower() != ADMIN_USERNAME.lower():
             old_nick = user.username
             user.username = new_nick
-
-            # Get the updated user list snapshot while under the lock
             users_list = []
             async with connected_lock:
                 users_list = get_users_list()
-
-            # Perform broadcasts outside the lock
             await broadcast({"type": "system", "text": f"{old_nick} is now known as {new_nick}."})
             await broadcast({"type": "users", "users": users_list})
         else:
@@ -402,7 +411,7 @@ async def websocket_endpoint(ws: WebSocket):
         await safe_send(ws, {"type": "users", "users": users_list})
 
         welcome_prompt = f"Generate a short, cool, welcoming message for '{user.username}' joining '{APP_NAME}' chat."
-        welcome_message = await call_groq_api(welcome_prompt, model="llama3-8b-8192")
+        welcome_message = await call_groq_api(welcome_prompt)
         await safe_send(ws, {"type": "system", "text": welcome_message})
 
         while True:
@@ -413,8 +422,13 @@ async def websocket_endpoint(ws: WebSocket):
         if user:
             async with connected_lock:
                 if user.session_id in connected_users: del connected_users[user.session_id]
-            await broadcast({"type": "user_leave", "user": {"name": user.username, "role": user.role}})
-            await broadcast({"type": "system", "text": f"{user.username} has left the chat."})
+            connections_to_send = []
+            async with connected_lock:
+                for u in connected_users.values(): connections_to_send.append(u.ws)
+
+            tasks = [safe_send(ws, {"type": "user_leave", "user": {"name": user.username, "role": user.role}}) for ws in connections_to_send]
+            tasks.append(safe_send(ws, {"type": "system", "text": f"{user.username} has left the chat."}))
+            if tasks: await asyncio.gather(*tasks)
 
 @app.on_event("startup")
 async def startup_event():
