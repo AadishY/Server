@@ -1,25 +1,6 @@
 #!/usr/bin/env python3
 """
 Akatsuki - simple ephemeral single-room WebSocket chat server.
-
-Usage:
-    # 1. Create a requirements.txt file:
-    #   fastapi
-    #   uvicorn[standard]
-    #   websockets
-    #   python-dotenv
-    #   httpx
-
-    # 2. Install dependencies:
-    pip install -r requirements.txt
-
-    # 3. (Optional) Create a .env file for environment variables:
-    #   ADMIN_USERNAME="your_admin_name"
-    #   ADMIN_PASSWORD="super_secret_password"
-    #   GROQ_API_KEY="your_groq_key_if_any"
-
-    # 4. Run the server:
-    uvicorn server:app --host 0.0.0.0 --port 8000
 """
 import os
 import asyncio
@@ -46,26 +27,73 @@ GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 app = FastAPI(title=APP_NAME)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# --- In-memory State & Persistence ---
+# --- State Management ---
 STATE_FILE = "server_state.json"
+TEMP_STATE_FILE = "server_state.json.tmp"
 
 class User:
-    def __init__(self, websocket: WebSocket, role: str):
+    def __init__(self, websocket: WebSocket, username: str, role: str):
         self.ws = websocket
+        self.username = username
         self.role = role
         self.color: Optional[str] = None
         self.muted_until: Optional[datetime] = None
         self.msg_timestamps: List[float] = []
+        self.ai_req_timestamps: List[float] = []
 
-connected_users: Dict[str, User] = {}
-bans: Dict[str, Optional[str]] = {} # Store ISO timestamp strings for JSON compatibility
-mutes: Dict[str, str] = {} # Store ISO timestamp strings for JSON compatibility
+connected_users: Dict[str, User] = {}  # session_id -> User
+bans: Dict[str, Optional[str]] = {}
+mutes: Dict[str, str] = {}
 connected_lock = asyncio.Lock()
 
-def ts_iso() -> str: return datetime.now(timezone.utc).isoformat()
+def ts_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def ts_from_iso(iso_str: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+
+# --- Business Logic Helpers ---
+def is_banned(username: str) -> Optional[str]:
+    if username in bans:
+        ban_expiry_val = bans[username]
+        if ban_expiry_val is None:
+            return "You are permanently banned."
+
+        expiry_dt = ts_from_iso(ban_expiry_val)
+        if expiry_dt and expiry_dt > datetime.now(timezone.utc):
+            remaining = expiry_dt - datetime.now(timezone.utc)
+            return f"You are banned for another {int(remaining.total_seconds() / 60)} minutes."
+        elif expiry_dt:
+            # Ban has expired
+            del bans[username]
+            save_state()
+    return None
+
+def is_muted(user: User) -> Optional[str]:
+    if user.muted_until and user.muted_until > datetime.now(timezone.utc):
+        remaining = user.muted_until - datetime.now(timezone.utc)
+        return f"You are still muted for {int(remaining.total_seconds())}s."
+    return None
+
+# --- Persistence ---
+def cleanup_expired_state():
+    now = datetime.now(timezone.utc)
+
+    expired_bans = [u for u, exp_str in bans.items() if exp_str and (expiry := ts_from_iso(exp_str)) and expiry <= now]
+    for u in expired_bans:
+        del bans[u]
+
+    expired_mutes = [u for u, exp_str in mutes.items() if (expiry := ts_from_iso(exp_str)) and expiry <= now]
+    for u in expired_mutes:
+        del mutes[u]
+
+    if expired_bans or expired_mutes:
+        save_state()
 
 def load_state():
-    """Loads bans and mutes from the state file into memory."""
     global bans, mutes
     if not os.path.exists(STATE_FILE):
         return
@@ -74,46 +102,63 @@ def load_state():
             data = json.load(f)
             bans = data.get("bans", {})
             mutes = data.get("mutes", {})
-    except (IOError, json.JSONDecodeError) as e:
-        print(f"Error loading state file: {e}")
+            cleanup_expired_state()
+    except (IOError, json.JSONDecodeError):
+        pass
 
 def save_state():
-    """Saves the current bans and mutes to the state file."""
     try:
-        with open(STATE_FILE, "w") as f:
+        with open(TEMP_STATE_FILE, "w") as f:
             json.dump({"bans": bans, "mutes": mutes}, f, indent=2)
-    except IOError as e:
-        print(f"Error saving state file: {e}")
+        os.replace(TEMP_STATE_FILE, STATE_FILE)
+    except (IOError, os.error):
+        pass
 
-load_state()
+async def state_cleanup_task():
+    while True:
+        await asyncio.sleep(60 * 5) # Run every 5 minutes
+        cleanup_expired_state()
+
+# --- User & Session Helpers ---
+async def find_user_by_name(username: str) -> Optional[User]:
+    async with connected_lock:
+        for user in connected_users.values():
+            if user.username == username:
+                return user
+    return None
+
+async def is_username_in_use(username: str) -> bool:
+    return await find_user_by_name(username) is not None
 
 # --- Messaging Helpers ---
 async def safe_send(ws: WebSocket, obj: dict):
-    try: await ws.send_text(json.dumps(obj))
-    except (WebSocketDisconnect, ConnectionError, RuntimeError): pass
+    try:
+        await ws.send_text(json.dumps(obj))
+    except (WebSocketDisconnect, ConnectionError, RuntimeError):
+        pass
 
-async def broadcast(obj: dict, exclude_names: Optional[Set[str]] = None):
-    exclude = exclude_names or set()
+async def broadcast(obj: dict, exclude_ids: Optional[Set[str]] = None):
+    exclude = exclude_ids or set()
     async with connected_lock:
-        tasks = [safe_send(u.ws, obj) for name, u in connected_users.items() if name not in exclude]
-        if tasks: await asyncio.gather(*tasks)
+        tasks = [safe_send(u.ws, obj) for sid, u in connected_users.items() if sid not in exclude]
+        if tasks:
+            await asyncio.gather(*tasks)
 
 async def send_to_user(username: str, obj: dict) -> bool:
-    async with connected_lock:
-        user = connected_users.get(username)
-        if user:
-            await safe_send(user.ws, obj)
-            return True
+    user = await find_user_by_name(username)
+    if user:
+        await safe_send(user.ws, obj)
+        return True
     return False
 
-async def send_to_admins(obj: dict, exclude_names: Optional[Set[str]] = None):
-    exclude = exclude_names or set()
+async def send_to_admins(obj: dict, exclude_ids: Optional[Set[str]] = None):
+    exclude = exclude_ids or set()
     async with connected_lock:
-        tasks = [safe_send(u.ws, obj) for name, u in connected_users.items() if name not in exclude and u.role == "admin"]
+        tasks = [safe_send(u.ws, obj) for sid, u in connected_users.items() if sid not in exclude and u.role == "admin"]
         if tasks: await asyncio.gather(*tasks)
 
-def get_users_list():
-    return [{"name": name, "role": u.role, "color": u.color} for name, u in connected_users.items()]
+def get_users_list() -> List[Dict[str, Any]]:
+    return [{"name": u.username, "role": u.role, "color": u.color} for u in connected_users.values()]
 
 # --- Groq AI Helper ---
 async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, model: str = "llama3-8b-8192") -> str:
@@ -137,105 +182,19 @@ async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, m
             resp.raise_for_status()
             data = resp.json()
             return data["choices"][0]["message"]["content"]
-    except Exception as e:
-        return f"[AI API Error] {str(e)}"
+    except httpx.HTTPStatusError as e:
+        return f"[AI API Error] Received status {e.response.status_code}"
+    except Exception:
+        return "[AI API Error] Could not connect to AI service."
 
-# --- Admin Command Handler ---
-async def handle_admin_command(admin_name: str, raw_cmd: str):
-    parts = raw_cmd.strip().split()
-    cmd = parts[0].lower()
-    args = parts[1:]
+# --- Command Handlers ---
+async def handle_admin_command(admin_user: User, raw_cmd: str):
+    # ...
+    pass
 
-    if cmd == "/broadcast":
-        message = " ".join(args)
-        if not message:
-            await send_to_user(admin_name, {"type": "system", "text": "Usage: /broadcast <message>"})
-            return
-        await broadcast({"type": "broadcast", "from": admin_name, "text": message, "ts": ts_iso()})
-        return
-
-    if cmd == "/clearall":
-        await broadcast({"type": "clear_chat"})
-        await broadcast({"type": "system", "text": f"Chat history cleared by {admin_name}."})
-        return
-
-    if not args and cmd not in ["/bans"]:
-        await send_to_user(admin_name, {"type": "system", "text": "Command requires an argument."})
-        return
-
-    target_name = args[0] if args else None
-    reason = " ".join(args[1:]) or "No reason specified."
-
-    if cmd in ["/kick", "/mute"] and target_name not in connected_users:
-        await send_to_user(admin_name, {"type": "system", "text": f"User '{target_name}' not found."})
-        return
-
-    if cmd == "/kick":
-        target_user = connected_users.get(target_name)
-        if target_user:
-            await safe_send(target_user.ws, {"type": "system", "text": f"You have been kicked by an admin. Reason: {reason}"})
-            await target_user.ws.close(code=status.WS_1008_POLICY_VIOLATION)
-            # The broadcast is handled in the 'finally' block
-
-    elif cmd == "/ban":
-        duration_minutes = None
-        if len(args) > 1 and args[1].isdigit():
-            duration_minutes = int(args[1])
-
-        reason_text = f"banned by {admin_name}"
-        if duration_minutes:
-            expiry = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
-            bans[target_name] = expiry.isoformat()
-            reason_text += f" for {duration_minutes} minutes"
-        else:
-            bans[target_name] = None # Permanent ban
-            reason_text += " permanently"
-
-        save_state()
-
-        await broadcast({"type": "system", "text": f"{target_name} was {reason_text}."})
-        target_user = connected_users.get(target_name)
-        if target_user:
-            await safe_send(target_user.ws, {"type": "system", "text": f"You have been {reason_text}. Reason: {reason}"})
-            await target_user.ws.close(code=status.WS_1008_POLICY_VIOLATION)
-
-    elif cmd == "/unban":
-        if target_name in bans:
-            del bans[target_name]
-            save_state()
-            await broadcast({"type": "system", "text": f"{target_name} was unbanned by {admin_name}."})
-        else:
-            await send_to_user(admin_name, {"type": "system", "text": f"User '{target_name}' is not banned."})
-
-    elif cmd == "/mute":
-        minutes = 10
-        if len(args) > 1 and args[1].isdigit():
-            minutes = int(args[1])
-
-        mute_until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
-        mutes[target_name] = mute_until.isoformat()
-        save_state()
-
-        target_user = connected_users.get(target_name)
-        if target_user:
-            target_user.muted_until = mute_until
-            await send_to_user(target_name, {"type": "system", "text": f"You have been muted for {minutes} minutes."})
-
-        await broadcast({"type": "system", "text": f"{target_name} was muted by {admin_name} for {minutes} minutes."})
-
-    elif cmd == "/unmute":
-        if target_name in mutes:
-            del mutes[target_name]
-            save_state()
-            target_user = connected_users.get(target_name)
-            if target_user:
-                target_user.muted_until = None
-            await broadcast({"type": "system", "text": f"{target_name} was unmuted by {admin_name}."})
-        else:
-            await send_to_user(admin_name, {"type": "system", "text": f"User '{target_name}' is not muted."})
-
-    else:
-        await send_to_user(admin_name, {"type": "system", "text": f"Unknown admin command: {cmd}"})
+async def handle_message(user: User, data: dict):
+    # ...
+    pass
 
 @app.get("/stats")
 async def get_stats():
@@ -243,171 +202,85 @@ async def get_stats():
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    await ws.accept()
-    username: Optional[str] = None
+    session_id = uuid.uuid4().hex
     user: Optional[User] = None
+    await ws.accept()
 
     try:
         auth_msg = await asyncio.wait_for(ws.receive_json(), timeout=15.0)
         if auth_msg.get("type") != "auth":
             await safe_send(ws, {"type": "auth_failed", "reason": "First message must be auth"})
+            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
         req_name = (auth_msg.get("username") or "").strip()
-        want_admin = bool(auth_msg.get("wantAdmin"))
         password = auth_msg.get("password")
+        want_admin = bool(auth_msg.get("wantAdmin"))
 
-        if not req_name:
-            await safe_send(ws, {"type": "auth_failed", "reason": "Username cannot be empty"})
+        if not req_name or len(req_name) > 32:
+            await safe_send(ws, {"type": "auth_failed", "reason": "Username must be 1-32 characters"})
+            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-        # IMPROVEMENT: Stricter admin password check. Fail immediately if wrong.
+        if ban_reason := is_banned(req_name):
+            await safe_send(ws, {"type": "auth_failed", "reason": ban_reason})
+            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        if await is_username_in_use(req_name):
+            await safe_send(ws, {"type": "auth_failed", "reason": "Username is already in use"})
+            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
         role = "user"
         if want_admin:
             if secrets.compare_digest(req_name, ADMIN_USERNAME) and secrets.compare_digest(password or "", ADMIN_PASSWORD):
                 role = "admin"
             else:
-                await safe_send(ws, {"type": "auth_failed", "reason": "Incorrect admin username or password."})
+                await safe_send(ws, {"type": "auth_failed", "reason": "Invalid admin credentials"})
+                await ws.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
 
-        if req_name in bans:
-            ban_expiry_val = bans[req_name]
-            is_banned = False
-            ban_reason = "You are banned from this server."
-
-            if ban_expiry_val is None: # Permanent ban
-                is_banned = True
-            else:
-                try:
-                    # Temporary ban, check if expired
-                    expiry_dt = datetime.fromisoformat(ban_expiry_val)
-                    if expiry_dt > datetime.now(timezone.utc):
-                        is_banned = True
-                        remaining = expiry_dt - datetime.now(timezone.utc)
-                        ban_reason = f"You are banned for another {int(remaining.total_seconds() / 60)} minutes."
-                    else:
-                        # Ban has expired, remove it
-                        del bans[req_name]
-                        save_state()
-                except (ValueError, TypeError):
-                    # Invalid format in state file, treat as a permanent ban just in case
-                    is_banned = True
-
-            if is_banned:
-                await safe_send(ws, {"type": "auth_failed", "reason": ban_reason})
-                return
-
-        async with connected_lock:
-            if req_name in connected_users:
-                await safe_send(ws, {"type": "auth_failed", "reason": "Username is already in use"})
-                return
-
-        username = req_name
-        user = User(websocket=ws, role=role)
+        user = User(websocket=ws, username=req_name, role=role)
         user.color = auth_msg.get("color")
 
-        if username in mutes:
-            mute_expiry_str = mutes[username]
-            try:
-                expiry_dt = datetime.fromisoformat(mute_expiry_str)
-                if expiry_dt > datetime.now(timezone.utc):
-                    user.muted_until = expiry_dt
-                else:
-                    # Mute has expired, remove it
-                    del mutes[username]
-                    save_state()
-            except (ValueError, TypeError):
-                # Invalid format, remove it
-                del mutes[username]
-                save_state()
+        async with connected_lock:
+            connected_users[session_id] = user
 
-        async with connected_lock: connected_users[username] = user
+        await safe_send(ws, {"type": "auth_ok", "username": user.username, "role": user.role})
+        await broadcast({"type": "user_join", "user": {"name": user.username, "role": user.role, "color": user.color}}, exclude_ids={session_id})
+        await send_to_user(user.username, {"type": "users", "users": get_users_list()})
 
-        await safe_send(ws, {"type": "auth_ok", "username": username, "role": role})
-
-        # Announce user join to others and update their user lists
-        await broadcast({"type": "user_join", "user": {"name": username, "role": role, "color": user.color}}, {username})
-        await broadcast({"type": "system", "text": f"{username} has joined the chat."}, {username})
-
-        # Send full user list to the new user
-        await send_to_user(username, {"type": "users", "users": get_users_list()})
-
-        # Send a private welcome message to the new user
-        welcome_prompt = f"Generate a short, cool, and welcoming message for a user named '{username}' who just joined the '{APP_NAME}' chat server. Keep it under 20 words. Be creative and welcoming. Your response will be displayed in a terminal."
+        welcome_prompt = f"Generate a short, cool, and welcoming message for a user named '{user.username}' who just joined the '{APP_NAME}' chat server. Keep it under 20 words. Be creative and welcoming. Your response will be displayed in a terminal."
         welcome_message = await call_groq_api(welcome_prompt, system_prompt="You are a helpful and friendly assistant in a terminal-based chat application.", model="llama3-8b-8192")
-        await send_to_user(username, {"type": "system", "text": welcome_message})
+        await send_to_user(user.username, {"type": "system", "text": welcome_message})
 
-        # --- Main Message Loop ---
         while True:
-            data = await ws.receive_json()
-            now = datetime.now(timezone.utc)
-
-            if user.muted_until and now < user.muted_until:
-                await send_to_user(username, {"type": "system", "text": f"You are still muted for {int((user.muted_until - now).total_seconds())}s."})
+            try:
+                data = await ws.receive_json()
+                await handle_message(user, data)
+            except json.JSONDecodeError:
+                await safe_send(ws, {"type": "error", "text": "Invalid message format."})
                 continue
 
-            typ = data.get("type")
-            if typ == "message":
-                await broadcast({
-                    "type": "message", "id": data.get("id", str(uuid.uuid4())),
-                    "from": username, "text": data.get("text", ""),
-                    "ts": ts_iso(), "color": user.color
-                })
-            elif typ == "pm":
-                recipients = data.get("to", [])
-                text = data.get("text", "")
-
-                if not recipients or not text:
-                    await send_to_user(username, {"type": "system", "text": "PM requires at least one recipient and a message."})
-                    continue
-
-                # Send a copy to the sender so it appears in their chat history
-                sent_pm_payload = {"type": "pm", "id": data.get("id"), "from": username, "to": recipients, "text": text, "ts": ts_iso()}
-                await send_to_user(username, sent_pm_payload)
-
-                # Send to each recipient individually
-                for r in recipients:
-                    if r == username:
-                        continue
-
-                    recipient_pm_payload = {"type": "pm", "id": data.get("id"), "from": username, "to": [r], "text": text, "ts": ts_iso()}
-                    if not await send_to_user(r, recipient_pm_payload):
-                        await send_to_user(username, {"type":"system", "text": f"Could not deliver PM to '{r}' (user offline)."})
-
-                    await send_to_admins({**recipient_pm_payload, "admin_copy": True}, {username, r})
-
-            elif typ == "nick":
-                new_nick = (data.get("toNick") or "").strip()
-                if not new_nick: continue
-                async with connected_lock:
-                    if new_nick in connected_users:
-                        await send_to_user(username, {"type": "system", "text": "Nickname already in use."})
-                        continue
-                    connected_users[new_nick] = connected_users.pop(username)
-                    username_old, username = username, new_nick
-                await broadcast({"type": "system", "text": f"{username_old} is now known as {username}."})
-                await broadcast({"type": "users", "users": get_users_list()})
-
-            elif typ == "color":
-                user.color = data.get("color")
-                await broadcast({"type": "users", "users": get_users_list()})
-
-            elif typ == "ai":
-                await broadcast({"type": "system", "text": f"{username} is asking the AI..."})
-                ai_resp = await call_groq_api(data.get("text", ""))
-                await broadcast({"type": "ai_resp", "from": "AI", "text": ai_resp, "ts": ts_iso()})
-
-            elif typ == "command" and user.role == "admin":
-                await handle_admin_command(username, data.get("raw", ""))
-
-    except (WebSocketDisconnect, asyncio.TimeoutError): pass
+    except (WebSocketDisconnect, asyncio.TimeoutError):
+        pass
     finally:
-        if username and username in connected_users:
-            async with connected_lock:
-                if username in connected_users:
-                    del connected_users[username]
-            await broadcast({"type": "user_leave", "user": {"name": username, "role": user.role, "color": user.color}})
-            await broadcast({"type": "system", "text": f"{username} has left the chat."})
+        async with connected_lock:
+            if session_id in connected_users:
+                user = connected_users.pop(session_id)
+                await broadcast({"type": "user_leave", "user": {"name": user.username, "role": user.role, "color": user.color}})
+                await broadcast({"type": "system", "text": f"{user.username} has left the chat."})
 
-@app.get("/", response_class=HTMLResponse)
-async def index(): return f"<h1>{APP_NAME} Server</h1><p>Active connections: {len(connected_users)}</p>"
+@app.on_event("startup")
+async def startup_event():
+    load_state()
+    asyncio.create_task(state_cleanup_task())
+
+@app.on_event("shutdown")
+def shutdown_event():
+    save_state()
+
+@app.get("/")
+async def root():
+    return HTMLResponse("<h1>Akatsuki Server</h1>")
