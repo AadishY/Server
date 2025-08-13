@@ -257,7 +257,8 @@ async def handle_admin_command(admin_user: User, raw_cmd: str):
 
     if cmd in ("/broadcast", "/b"):
         message = " ".join(args)
-        if not message: await safe_send(admin_user.ws, {"type": "system", "text": "Usage: /broadcast <message>"})
+        if not message:
+            await safe_send(admin_user.ws, {"type": "system", "text": "Usage: /broadcast <message>"})
         else:
             broadcast_payload = {"type": "broadcast", "from": admin_user.username, "text": message, "ts": ts_iso()}
             LATEST_BROADCAST = broadcast_payload
