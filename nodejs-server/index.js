@@ -75,6 +75,50 @@ function findUserByName(username) {
     return null;
 }
 
+function parseCommand(raw_cmd) {
+    const parts = raw_cmd.trim().split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+    const args = parts.slice(1);
+    const users = new Set();
+    const remaining_args = [];
+    for (const arg of args) {
+        if (arg.startsWith('@')) {
+            users.add(arg.substring(1));
+        } else {
+            remaining_args.push(arg);
+        }
+    }
+    return { cmd, users, remaining_args };
+}
+
+function handleAdminCommand(adminUser, raw_cmd) {
+    const { cmd, users, remaining_args } = parseCommand(raw_cmd);
+
+    for (const username of users) {
+        const targetUser = findUserByName(username);
+        switch (cmd) {
+            case '/kick':
+                if (targetUser) {
+                    const reason = remaining_args.join(' ') || "No reason specified.";
+                    safeSend(targetUser.ws, { type: 'system', text: `You have been kicked. Reason: ${reason}` });
+                    targetUser.ws.close(1008, 'Kicked by admin');
+                }
+                break;
+            case '/ban':
+                bans[username] = null; // Permanent ban
+                broadcast({ type: 'system', text: `${username} was banned by ${adminUser.username}.` });
+                if (targetUser) {
+                    safeSend(targetUser.ws, { type: 'system', text: 'You have been banned.' });
+                    targetUser.ws.close(1008, 'Banned by admin');
+                }
+                break;
+            // ... other commands
+        }
+    }
+    saveState();
+}
+
+
 app.get('/', (req, res) => {
     res.send('<h1>Akatsuki Node.js Server</h1>');
 });
@@ -170,7 +214,31 @@ wss.on('connection', (ws) => {
                 const usersList = Array.from(connected_users.values()).map(u => ({ name: u.username, role: u.role, color: u.color }));
                 broadcast({ type: 'users', users: usersList });
                 break;
-            // ... add other command handlers here
+            case 'pm':
+                const { to, text } = data;
+                if (to && text) {
+                    to.forEach(recipientName => {
+                        const recipient = findUserByName(recipientName);
+                        if (recipient) {
+                            safeSend(recipient.ws, { type: 'pm', from: user.username, to: [recipientName], text, ts: new Date().toISOString() });
+                        } else {
+                            safeSend(ws, { type: 'system', text: `User '${recipientName}' not found.` });
+                        }
+                    });
+                    safeSend(ws, { type: 'pm', from: user.username, to, text, ts: new Date().toISOString() });
+                }
+                break;
+            case 'ai':
+                broadcast({ type: 'system', text: `${user.username} is asking the AI...` });
+                setTimeout(() => {
+                    broadcast({ type: 'ai_resp', from: 'AI', text: `[Simulated AI Response] ${data.text}` });
+                }, 500);
+                break;
+            case 'command':
+                if (user.role === 'admin') {
+                    handleAdminCommand(user, data.raw);
+                }
+                break;
         }
     });
 
