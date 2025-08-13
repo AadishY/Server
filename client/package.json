@@ -19,8 +19,7 @@
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
     "uuid": "^9.0.1",
-    "ws": "^8.18.3",
-    "https": "^1.0.0"
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "esbuild": "^0.25.8",
