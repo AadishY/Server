@@ -86,6 +86,16 @@ function useWs(url, onOpen, onMsg, onClose, onError) {
         if (!mounted) return;
         setStatus("closed");
         onClose?.(code);
+
+        // Do not attempt to reconnect on abnormal close codes (e.g. 1008 Policy Violation for kick/ban)
+        if (code === 1008) {
+          if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+          }
+          return;
+        }
+
         retryRef.current.attempt++;
         const delay = Math.min(10000, 500 + retryRef.current.attempt * 700);
         setStatus("reconnecting");
@@ -283,6 +293,7 @@ const Chat = ({ initialWsUrl }) => {
   const [wsUrl, setWsUrl] = useState(null);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [loginError, setLoginError] = useState(null);
+  const [pinnedMessage, setPinnedMessage] = useState(null);
 
   const authInfoRef = useRef(authInfo);
   authInfoRef.current = authInfo;
@@ -319,8 +330,14 @@ const Chat = ({ initialWsUrl }) => {
         break;
       case "clear_chat":
         setMessages([]);
+        setPinnedMessage(null);
         break;
-      case "message": case "ai_resp": case "pm": case "reaction": case "system": case "broadcast":
+      case "broadcast":
+        setPinnedMessage(data);
+        // We also add it to the message list so it's in the history
+        setMessages(m => [...m, { id: data.id || uuidv4(), ...data }]);
+        break;
+      case "message": case "ai_resp": case "pm": case "reaction": case "system":
         setMessages(m => [...m, { id: data.id || uuidv4(), ...data }]);
         if (!isScrolledUp) {
           setScrollOffset(0);
@@ -330,8 +347,28 @@ const Chat = ({ initialWsUrl }) => {
     }
   }, [isScrolledUp]);
 
-  const onClose = useCallback((code) => pushSys(`Disconnected (code: ${code}). Reconnecting...`), [pushSys]);
-  const onError = useCallback((err) => pushSys(`Connection error: ${err.message || "Unknown"}`), [pushSys]);
+  const onClose = useCallback((code) => {
+    // 1008 is Policy Violation, used by server for kick/ban
+    if (code === 1008) {
+      setLoginError("You have been disconnected by an admin.");
+      setAuthInfo(null);
+      setWsUrl(null);
+    } else {
+      pushSys(`Disconnected (code: ${code}). Reconnecting...`);
+    }
+  }, [pushSys]);
+
+  const onError = useCallback((err) => {
+    // EPROTO with wrong version number is an SSL/TLS error.
+    // This happens when client uses wss:// on a non-SSL ws:// server.
+    if (err.message?.includes("wrong version number")) {
+        setLoginError("Connection failed: SSL/TLS version mismatch. Check ws:// vs wss://.");
+        setAuthInfo(null);
+        setWsUrl(null);
+    } else {
+        pushSys(`Connection error: ${err.message || "Unknown"}`);
+    }
+  }, [pushSys]);
 
   const ws = useWs(wsUrl, onOpen, onMsg, onClose, onError);
 
@@ -344,11 +381,17 @@ const Chat = ({ initialWsUrl }) => {
     }
   }, [helpVisible]);
 
-  const handleCommand = (text) => {
+  // Wrapped in useCallback to ensure functions passed to child components have stable identities.
+  // This avoids stale closures and unnecessary re-renders.
+  const handleCommand = useCallback((text) => {
     const parts = text.trim().split(/\s+/);
     const cmd = parts[0].toLowerCase();
     const args = parts.slice(1);
     let sent = false;
+
+    // Always use the ref to get the latest authInfo
+    const currentAuth = authInfoRef.current;
+    if (!currentAuth) return;
 
     switch(cmd) {
       case "/e":
@@ -361,7 +404,7 @@ const Chat = ({ initialWsUrl }) => {
         setHelpVisible(v => !v);
         return;
       case "/clear":
-        if (authInfo.isAdmin) {
+        if (currentAuth.isAdmin) {
           sent = ws.send({ type: "command", raw: "/clearall" });
         } else {
           setMessages([]);
@@ -379,6 +422,8 @@ const Chat = ({ initialWsUrl }) => {
         } else if (c.toLowerCase() === "off") {
           c = null;
         }
+        // This is the one place we call setAuthInfo, which triggers the re-render.
+        // Subsequent calls to handleCommand will get the new value via the ref.
         setAuthInfo(auth => ({...auth, color: c}));
         sent = ws.send({ type: "color", color: c });
         break;
@@ -386,19 +431,19 @@ const Chat = ({ initialWsUrl }) => {
       case "/pm": case "/dm": {
         const { recipients, message } = parseMentions(args);
         if (!recipients.length || !message) { pushSys("Usage: /pm @user message..."); return; }
-        const payload = { type: "pm", id: uuidv4(), from: authInfo.username, to: recipients, text: message, ts: nowISO() };
+        const payload = { type: "pm", id: uuidv4(), from: currentAuth.username, to: recipients, text: message, ts: nowISO() };
         sent = ws.send(payload);
         break;
       }
       case "/ai": {
         const prompt = args.join(" ");
         if (!prompt) { pushSys("Usage: /ai <prompt...>"); return; }
-        setMessages(m => [...m, { id: uuidv4(), type: "message", from: authInfo.username, text: `(to AI) ${prompt}`, ts: nowISO(), color: authInfo.color }]);
+        setMessages(m => [...m, { id: uuidv4(), type: "message", from: currentAuth.username, text: `(to AI) ${prompt}`, ts: nowISO(), color: currentAuth.color }]);
         sent = ws.send({ type: "ai", text: prompt });
         break;
       }
       case "/b": {
-        if (!authInfo.isAdmin) {
+        if (!currentAuth.isAdmin) {
           pushSys("Only admins can broadcast messages.");
           return;
         }
@@ -412,16 +457,17 @@ const Chat = ({ initialWsUrl }) => {
     }
     if (sent) setInput("");
     else if (cmd !== "/help" && cmd !== "/clear") pushSys("Command could not be sent. You may be disconnected.");
-  };
+  }, [ws, exit, setHelpVisible, setMessages, pushSys, setInput]);
 
-  const submit = (text) => {
+  const submit = useCallback((text) => {
     const trimmed = text.trim();
-    if (!trimmed || !authInfo) return;
+    const currentAuth = authInfoRef.current;
+    if (!trimmed || !currentAuth) return;
     if (trimmed.startsWith("/")) return handleCommand(trimmed);
-    const payload = { type: "message", id: uuidv4(), from: authInfo.username, text: trimmed, ts: nowISO(), color: authInfo.color };
+    const payload = { type: "message", id: uuidv4(), from: currentAuth.username, text: trimmed, ts: nowISO(), color: currentAuth.color };
     if (ws.send(payload)) setInput("");
     else pushSys("Message could not be sent. You may be disconnected.");
-  };
+  }, [handleCommand, ws, setInput, pushSys]);
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") { ws.close(); exit(); }
@@ -438,7 +484,7 @@ const Chat = ({ initialWsUrl }) => {
 
   if (!authInfo) return <LoginUI onLogin={handleLogin} status={ws.status} error={loginError} />;
 
-  const maxMsgLines = Math.max(8, (stdout?.rows || 24) - 8);
+  const maxMsgLines = Math.max(8, (stdout?.rows || 24) - 8 - (pinnedMessage ? 3 : 0));
   const endIndex = messages.length - scrollOffset;
   const startIndex = Math.max(0, endIndex - maxMsgLines);
   const visibleMessages = messages.slice(startIndex, endIndex);
@@ -452,6 +498,13 @@ const Chat = ({ initialWsUrl }) => {
           <Text>{ws.status === "open" ? chalk.green("● Connected") : <><Spinner type="dots" /> <Text dimColor>{ws.status}</Text></>}</Text>
         </Box>
       </Box>
+
+      {/* --- PINNED BROADCAST (New) --- */}
+      {pinnedMessage && (
+        <Box paddingX={1} flexShrink={0}>
+            <MessageItem m={pinnedMessage} me={authInfo.username} />
+        </Box>
+      )}
 
       {/* --- CONTENT (Scrollable) --- */}
       <Box flexGrow={1} flexShrink={1} paddingY={1} flexDirection="row">
@@ -469,27 +522,25 @@ const Chat = ({ initialWsUrl }) => {
           <Box marginTop={1} borderStyle="round" padding={1} flexDirection="column">
             <Text bold>Commands</Text>
             <Text><Text color="cyan">/nick &lt;name&gt;</Text> - Change your nickname</Text>
-            <Text><Text color="cyan">/color [color]</Text> - Set your color. No color picks a random one.</Text>
-            <Text><Text color="cyan">/c [color]</Text> - Alias for /color.</Text>
-            <Text><Text color="cyan">/pm &lt;@user...&gt; &lt;msg&gt;</Text> - Send a private message.</Text>
-            <Text><Text color="cyan">/dm &lt;@user...&gt; &lt;msg&gt;</Text> - Alias for /pm.</Text>
-            <Text><Text color="cyan">/ai &lt;prompt&gt;</Text> - Ask the AI a question.</Text>
-            <Text><Text color="cyan">/clear</Text> - Clear your message view.</Text>
-            <Text><Text color="cyan">/help</Text> - Toggle this help panel.</Text>
-            <Text><Text color="cyan">/exit</Text> - Quit the application.</Text>
-            <Text><Text color="cyan">/e</Text> - Alias for /exit.</Text>
+            <Text><Text color="cyan">/color, /c [color]</Text> - Set your color (no value is random)</Text>
+            <Text><Text color="cyan">/pm, /dm &lt;@user...&gt; &lt;msg&gt;</Text> - Send a private message</Text>
+            <Text><Text color="cyan">/ai &lt;prompt&gt;</Text> - Ask the AI a question</Text>
+            <Text><Text color="cyan">/clear</Text> - Clear your local message view</Text>
+            <Text><Text color="cyan">/help</Text> - Toggle this help panel</Text>
+            <Text><Text color="cyan">/exit, /e, /quit</Text> - Quit the application</Text>
             <Text>You can format messages with *bold*, _italic_, __underline__, ~strikethrough~, |obfuscated|, and > blockquote.</Text>
             {authInfo.isAdmin && (
               <>
                 <Box marginTop={1} />
                 <Text bold>Admin Commands</Text>
-                <Text><Text color="cyan">/kick &lt;@user...&gt; [reason]</Text> - Kick users.</Text>
-                <Text><Text color="cyan">/ban &lt;@user...&gt; [minutes] [reason]</Text> - Ban users.</Text>
-                <Text><Text color="cyan">/unban &lt;@user...&gt;</Text> - Unban users.</Text>
-                <Text><Text color="cyan">/mute &lt;@user...&gt; [minutes]</Text> - Mute users.</Text>
-                <Text><Text color="cyan">/unmute &lt;@user...&gt;</Text> - Unmute users.</Text>
-                <Text><Text color="cyan">/broadcast &lt;msg&gt;</Text> - Send a broadcast message.</Text>
-                <Text><Text color="cyan">/b &lt;msg&gt;</Text> - Alias for /broadcast.</Text>
+                <Text><Text color="cyan">/login &lt;@user&gt;</Text> - Allow a non-whitelisted user to join once</Text>
+                <Text><Text color="cyan">/kick &lt;@user...&gt; [reason]</Text> - Kick users</Text>
+                <Text><Text color="cyan">/ban &lt;@user...&gt; [min] [reason]</Text> - Ban users</Text>
+                <Text><Text color="cyan">/unban &lt;@user...&gt;</Text> - Unban users</Text>
+                <Text><Text color="cyan">/mute &lt;@user...&gt; [min]</Text> - Mute users</Text>
+                <Text><Text color="cyan">/unmute &lt;@user...&gt;</Text> - Unmute users</Text>
+                <Text><Text color="cyan">/broadcast, /b &lt;msg&gt;</Text> - Send a broadcast message</Text>
+                <Text><Text color="cyan">/clearall</Text> - Clear chat history for all users</Text>
               </>
             )}
           </Box>
