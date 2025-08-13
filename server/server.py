@@ -308,10 +308,19 @@ async def handle_message(user: User, data: dict):
     elif typ == "nick":
         new_nick = (data.get("toNick") or "").strip()
         if new_nick and 1 <= len(new_nick) <= 32 and not await is_username_in_use(new_nick) and new_nick.lower() != ADMIN_USERNAME.lower():
-            old_nick, user.username = user.username, new_nick
+            old_nick = user.username
+            user.username = new_nick
+
+            # Get the updated user list snapshot while under the lock
+            users_list = []
+            async with connected_lock:
+                users_list = get_users_list()
+
+            # Perform broadcasts outside the lock
             await broadcast({"type": "system", "text": f"{old_nick} is now known as {new_nick}."})
-            async with connected_lock: await broadcast({"type": "users", "users": get_users_list()})
-        else: await safe_send(user.ws, {"type": "system", "text": "Invalid or taken nickname."})
+            await broadcast({"type": "users", "users": users_list})
+        else:
+            await safe_send(user.ws, {"type": "system", "text": "Invalid or taken nickname."})
     elif typ == "pm":
         recipients, text = data.get("to", []), data.get("text", "")
         if recipients and text:

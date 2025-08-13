@@ -113,7 +113,10 @@ const MessageItem = React.memo(({ m, me }) => {
   if (m.type === "broadcast") {
     return (
       <Box borderStyle="round" borderColor="magenta" paddingX={1}>
-        <Text color="magentaBright" bold>{`[BROADCAST from ${m.from} at ${ts}] `}{formatMessage(m.text)}</Text>
+        <Text bold>
+            <Text dimColor>{`[BROADCAST from ${m.from} at ${ts}] `}</Text>
+            <Text color="magentaBright">{formatMessage(m.text)}</Text>
+        </Text>
       </Box>
     );
   }

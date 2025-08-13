@@ -72,7 +72,6 @@ The client is a terminal application built with React and Ink.
 | Command | Alias | Description | Example |
 | --- | --- | --- | --- |
 | `/nick <name>` | | Change your nickname. | `/nick satoshi` |
-| `/color [color]` | `/c` | Set your username color. Supports hex codes or color names. If no color is provided, a random one is chosen. | `/color red`, `/c #ff00ff` |
 | `/pm <@user...>` | `/dm` | Send a private message to one or more users. | `/pm @bob @alice hello!` |
 | `/ai <prompt>` | | Ask the AI a question. | `/ai what is the meaning of life?` |
 | `/clear` | | Clear the messages in your local view. | `/clear` |
