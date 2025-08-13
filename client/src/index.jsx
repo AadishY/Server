@@ -11,10 +11,6 @@ import crypto from "crypto";
 import https from "https";
 
 const SERVER_NAME = "Akatsuki";
-// The client will use the 'wss' protocol for secure connections
-// if it's running in a browser, but for a simple Node.js app
-// a plain 'ws' connection might be sufficient on some hosts.
-// It is best practice to use the secure protocol, 'wss'.
 const RENDER_URL = "wss://server-19jl.onrender.com/ws";
 const RENDER_STATS_URL = "https://server-19jl.onrender.com/stats";
 const DEFAULT_WS = process.env.WS_URL || RENDER_URL;
@@ -27,34 +23,21 @@ const shortTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString();
 const md5hex = (s) => crypto.createHash("md5").update(s || "").digest("hex").slice(0, 6);
 const defaultColorFor = (name) => `#${md5hex(name)}`;
 
-const colorize = (name, color) => {
-  if (!color) return chalk.bold(name);
-  if (color === "auto") return chalk.hex(defaultColorFor(name))(name);
-  if (/^#?[0-9a-f]{6}$/i.test(color)) return chalk.hex(color.startsWith("#") ? color : `#${color}`).bold(name);
-  try { return chalk.keyword(color)(name); } catch { return chalk.bold(name); }
+// colorize function is now simplified
+const colorize = (name) => {
+  if (!name) return chalk.bold("system");
+  return chalk.hex(defaultColorFor(name)).bold(name);
 };
 
 const formatMessage = (text) => {
     const parts = text.split(/(\*[^*]+\*|~[^~]+~|_[^_]+_|__[^_]+__|\|[^|]+\||^>.*)/gm);
     return parts.map((part, i) => {
-        if (part.startsWith("*") && part.endsWith("*")) {
-            return <Text key={i} bold>{part.slice(1, -1)}</Text>;
-        }
-        if (part.startsWith("~") && part.endsWith("~")) {
-            return <Text key={i} strikethrough>{part.slice(1, -1)}</Text>;
-        }
-        if (part.startsWith("_") && part.endsWith("_")) {
-            return <Text key={i} italic>{part.slice(1, -1)}</Text>;
-        }
-        if (part.startsWith("__") && part.endsWith("__")) {
-            return <Text key={i} underline>{part.slice(2, -2)}</Text>;
-        }
-        if (part.startsWith("|") && part.endsWith("|")) {
-            return <Text key={i} backgroundColor="black" color="black">{part.slice(1, -1)}</Text>;
-        }
-        if (part.startsWith(">")) {
-            return <Text key={i} dimColor italic> {part}</Text>;
-        }
+        if (part.startsWith("*") && part.endsWith("*")) return <Text key={i} bold>{part.slice(1, -1)}</Text>;
+        if (part.startsWith("~") && part.endsWith("~")) return <Text key={i} strikethrough>{part.slice(1, -1)}</Text>;
+        if (part.startsWith("_") && part.endsWith("_")) return <Text key={i} italic>{part.slice(1, -1)}</Text>;
+        if (part.startsWith("__") && part.endsWith("__")) return <Text key={i} underline>{part.slice(2, -2)}</Text>;
+        if (part.startsWith("|") && part.endsWith("|")) return <Text key={i} backgroundColor="black" color="black">{part.slice(1, -1)}</Text>;
+        if (part.startsWith(">")) return <Text key={i} dimColor italic> {part}</Text>;
         return part;
     });
 };
@@ -71,7 +54,7 @@ function useWs(url, onOpen, onMsg, onClose, onError) {
     const connect = () => {
       if (!mounted) return;
       setStatus("connecting");
-      const ws = new WebSocket(url);
+      const ws = new WebSocket(url, { rejectUnauthorized: false });
       wsRef.current = ws;
 
       ws.on("open", () => {
@@ -86,16 +69,10 @@ function useWs(url, onOpen, onMsg, onClose, onError) {
         if (!mounted) return;
         setStatus("closed");
         onClose?.(code);
-
-        // Do not attempt to reconnect on abnormal close codes (e.g. 1008 Policy Violation for kick/ban)
         if (code === 1008) {
-          if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-          }
-          return;
+            if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+            return;
         }
-
         retryRef.current.attempt++;
         const delay = Math.min(10000, 500 + retryRef.current.attempt * 700);
         setStatus("reconnecting");
@@ -136,10 +113,7 @@ const MessageItem = React.memo(({ m, me }) => {
   if (m.type === "broadcast") {
     return (
       <Box borderStyle="round" borderColor="magenta" paddingX={1}>
-        <Text color="magentaBright" bold>
-          {`[BROADCAST from ${m.from} at ${ts}] `}
-          {formatMessage(m.text)}
-        </Text>
+        <Text color="magentaBright" bold>{`[BROADCAST from ${m.from} at ${ts}] `}{formatMessage(m.text)}</Text>
       </Box>
     );
   }
@@ -151,18 +125,14 @@ const MessageItem = React.memo(({ m, me }) => {
     return <Text color="blueBright">{chalk.dim(`[${ts}] `)}{chalk.bold(m.from)}: {formatMessage(m.text)}</Text>;
   }
   const mentionMe = me && m.text && m.text.includes(`@${me}`);
-  const fromName = m.from ? colorize(m.from, m.color) : chalk.dim("system");
+  const fromName = m.from ? colorize(m.from) : chalk.dim("system");
   const body = <Text>{chalk.dim(`[${ts}] `)}{fromName}: {formatMessage(m.text)}</Text>;
   return mentionMe ? <Text backgroundColor="yellow" color="black">{body}</Text> : body;
 });
 
 const WAKING_MESSAGES = [
-  "Waking the server up...",
-  "Running Aadish's server...",
-  "Fixing the bugs...",
-  "Polishing the pixels...",
-  "Reticulating splines...",
-  "Almost there...",
+  "Waking the server up...", "Running Aadish's server...", "Fixing the bugs...",
+  "Polishing the pixels...", "Reticulating splines...", "Almost there...",
 ];
 
 const LoginUI = ({ onLogin, status, error }) => {
@@ -174,18 +144,14 @@ const LoginUI = ({ onLogin, status, error }) => {
 
   useEffect(() => {
     const fetchStats = () => {
-      https.get(RENDER_STATS_URL, (res) => {
+      https.get(RENDER_STATS_URL, { rejectUnauthorized: false }, (res) => {
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
-          try {
-            const stats = JSON.parse(data);
-            setActiveUsers(stats.active_users);
-          } catch (e) { /* ignore */ }
+          try { setActiveUsers(JSON.parse(data).active_users); } catch (e) { /* ignore */ }
         });
       }).on('error', () => { /* ignore */ });
     };
-
     fetchStats();
     const interval = setInterval(fetchStats, 5000);
     return () => clearInterval(interval);
@@ -203,7 +169,7 @@ const LoginUI = ({ onLogin, status, error }) => {
   const handleSubmitName = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    if (trimmed === ADMIN_USERNAME) setIsAskingPwd(true);
+    if (trimmed.toLowerCase() === ADMIN_USERNAME.toLowerCase()) setIsAskingPwd(true);
     else onLogin({ username: trimmed });
   };
 
@@ -212,8 +178,7 @@ const LoginUI = ({ onLogin, status, error }) => {
   if (status === "connecting" || status === "reconnecting") {
     return (
       <Box flexDirection="column" padding={1} borderStyle="round" alignItems="center">
-        <Spinner type="dots" />
-        <Text bold cyan>{WAKING_MESSAGES[wakingMessageIndex]}</Text>
+        <Spinner type="dots" /><Text bold cyan>{WAKING_MESSAGES[wakingMessageIndex]}</Text>
       </Box>
     );
   }
@@ -222,9 +187,7 @@ const LoginUI = ({ onLogin, status, error }) => {
     <Box flexDirection="column" padding={1} borderStyle="round">
       <Box justifyContent="space-between" marginBottom={1}>
         <Text bold cyan>{SERVER_NAME}</Text>
-        <Text dimColor>
-          {activeUsers !== null ? `${activeUsers} users online` : "..."}
-        </Text>
+        <Text dimColor>{activeUsers !== null ? `${activeUsers} users online` : "..."}</Text>
       </Box>
       {error && <Text color="red">{error}</Text>}
       <Box borderStyle="round" padding={1} flexDirection="column">
@@ -248,14 +211,8 @@ const UserList = React.memo(({ users, me }) => {
       <Text bold>Users ({users.length})</Text>
       {users.map((u) => (
         <Box key={u.name}>
-          <Text>
-            {u.role === "admin" ? <Text backgroundColor="red" color="whiteBright" bold> ADMIN </Text> : "       "}
-          </Text>
-          <Text>
-            {' '}
-            {colorize(u.name, u.color)}
-            {u.name === me ? chalk.dim(" (you)") : ""}
-          </Text>
+          <Text>{u.role === "admin" ? <Text backgroundColor="red" color="whiteBright" bold> ADMIN </Text> : "       "}</Text>
+          <Text>{' '}{colorize(u.name)}{u.name === me ? chalk.dim(" (you)") : ""}</Text>
         </Box>
       ))}
     </Box>
@@ -272,10 +229,7 @@ function parseMentions(parts) {
         const cleaned = p.trim().replace(/^@/, '');
         if (cleaned) recipients.add(cleaned);
       });
-    } else {
-      messageStartIndex = i;
-      break;
-    }
+    } else { messageStartIndex = i; break; }
   }
   const message = messageStartIndex === -1 ? "" : parts.slice(messageStartIndex).join(" ");
   return { recipients: Array.from(recipients), message };
@@ -313,7 +267,7 @@ const Chat = ({ initialWsUrl }) => {
       case "auth_ok":
         setAuthInfo(auth => ({...auth, username: data.username, isAdmin: data.role === "admin" }));
         setLoginError(null);
-        setMessages([]); // Clear auth messages
+        setMessages([]);
         pushSys(`Authenticated as ${data.username} (${data.role}). Welcome!`);
         break;
       case "auth_failed":
@@ -334,23 +288,22 @@ const Chat = ({ initialWsUrl }) => {
         break;
       case "broadcast":
         setPinnedMessage(data);
-        // We also add it to the message list so it's in the history
         setMessages(m => [...m, { id: data.id || uuidv4(), ...data }]);
+        break;
+      case "clear_broadcast":
+        setPinnedMessage(null);
         break;
       case "message": case "ai_resp": case "pm": case "reaction": case "system":
         setMessages(m => [...m, { id: data.id || uuidv4(), ...data }]);
-        if (!isScrolledUp) {
-          setScrollOffset(0);
-        }
+        if (!isScrolledUp) setScrollOffset(0);
         break;
       default: pushSys(`Received unknown message type: ${JSON.stringify(data)}`);
     }
   }, [isScrolledUp]);
 
   const onClose = useCallback((code) => {
-    // 1008 is Policy Violation, used by server for kick/ban
     if (code === 1008) {
-      setLoginError("You have been disconnected by an admin.");
+      setLoginError("You have been disconnected by an admin or due to a policy violation.");
       setAuthInfo(null);
       setWsUrl(null);
     } else {
@@ -359,8 +312,6 @@ const Chat = ({ initialWsUrl }) => {
   }, [pushSys]);
 
   const onError = useCallback((err) => {
-    // EPROTO with wrong version number is an SSL/TLS error.
-    // This happens when client uses wss:// on a non-SSL ws:// server.
     if (err.message?.includes("wrong version number")) {
         setLoginError("Connection failed: SSL/TLS version mismatch. Check ws:// vs wss://.");
         setAuthInfo(null);
@@ -374,29 +325,21 @@ const Chat = ({ initialWsUrl }) => {
 
   useEffect(() => {
     if (helpVisible) {
-      const timer = setTimeout(() => {
-        setHelpVisible(false);
-      }, 60000);
+      const timer = setTimeout(() => { setHelpVisible(false); }, 60000);
       return () => clearTimeout(timer);
     }
   }, [helpVisible]);
 
-  // Wrapped in useCallback to ensure functions passed to child components have stable identities.
-  // This avoids stale closures and unnecessary re-renders.
   const handleCommand = useCallback((text) => {
     const parts = text.trim().split(/\s+/);
     const cmd = parts[0].toLowerCase();
     const args = parts.slice(1);
     let sent = false;
-
-    // Always use the ref to get the latest authInfo
     const currentAuth = authInfoRef.current;
     if (!currentAuth) return;
 
     switch(cmd) {
-      case "/e":
-      case "/quit":
-      case "/exit":
+      case "/e": case "/quit": case "/exit":
         ws.close();
         exit();
         return;
@@ -404,30 +347,13 @@ const Chat = ({ initialWsUrl }) => {
         setHelpVisible(v => !v);
         return;
       case "/clear":
-        if (currentAuth.isAdmin) {
-          sent = ws.send({ type: "command", raw: "/clearall" });
-        } else {
-          setMessages([]);
-        }
+        if (currentAuth.isAdmin) sent = ws.send({ type: "command", raw: "/clearall" });
+        else setMessages([]);
         return;
       case "/nick":
         if (!args[0]) { pushSys("Usage: /nick <newname>"); return; }
         sent = ws.send({ type: "nick", toNick: args[0] });
         break;
-      case "/c":
-      case "/color": {
-        let c = args[0];
-        if (!c) {
-          c = `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`;
-        } else if (c.toLowerCase() === "off") {
-          c = null;
-        }
-        // This is the one place we call setAuthInfo, which triggers the re-render.
-        // Subsequent calls to handleCommand will get the new value via the ref.
-        setAuthInfo(auth => ({...auth, color: c}));
-        sent = ws.send({ type: "color", color: c });
-        break;
-      }
       case "/pm": case "/dm": {
         const { recipients, message } = parseMentions(args);
         if (!recipients.length || !message) { pushSys("Usage: /pm @user message..."); return; }
@@ -438,15 +364,12 @@ const Chat = ({ initialWsUrl }) => {
       case "/ai": {
         const prompt = args.join(" ");
         if (!prompt) { pushSys("Usage: /ai <prompt...>"); return; }
-        setMessages(m => [...m, { id: uuidv4(), type: "message", from: currentAuth.username, text: `(to AI) ${prompt}`, ts: nowISO(), color: currentAuth.color }]);
+        setMessages(m => [...m, { id: uuidv4(), type: "message", from: currentAuth.username, text: `(to AI) ${prompt}`, ts: nowISO() }]);
         sent = ws.send({ type: "ai", text: prompt });
         break;
       }
       case "/b": {
-        if (!currentAuth.isAdmin) {
-          pushSys("Only admins can broadcast messages.");
-          return;
-        }
+        if (!currentAuth.isAdmin) { pushSys("Only admins can broadcast messages."); return; }
         const message = args.join(" ");
         if (!message) { pushSys("Usage: /b <message>"); return; }
         sent = ws.send({ type: "command", raw: `/broadcast ${message}` });
@@ -464,7 +387,7 @@ const Chat = ({ initialWsUrl }) => {
     const currentAuth = authInfoRef.current;
     if (!trimmed || !currentAuth) return;
     if (trimmed.startsWith("/")) return handleCommand(trimmed);
-    const payload = { type: "message", id: uuidv4(), from: currentAuth.username, text: trimmed, ts: nowISO(), color: currentAuth.color };
+    const payload = { type: "message", id: uuidv4(), from: currentAuth.username, text: trimmed, ts: nowISO() };
     if (ws.send(payload)) setInput("");
     else pushSys("Message could not be sent. You may be disconnected.");
   }, [handleCommand, ws, setInput, pushSys]);
@@ -491,38 +414,30 @@ const Chat = ({ initialWsUrl }) => {
 
   return (
     <Box flexDirection="column" height="100%" width="100%">
-      {/* --- HEADER (Fixed) --- */}
       <Box paddingX={2} flexShrink={0}>
         <Box justifyContent="space-between" width="100%">
           <Text bold color="cyan">{SERVER_NAME}</Text>
           <Text>{ws.status === "open" ? chalk.green("● Connected") : <><Spinner type="dots" /> <Text dimColor>{ws.status}</Text></>}</Text>
         </Box>
       </Box>
-
-      {/* --- PINNED BROADCAST (New) --- */}
       {pinnedMessage && (
         <Box paddingX={1} flexShrink={0}>
             <MessageItem m={pinnedMessage} me={authInfo.username} />
         </Box>
       )}
-
-      {/* --- CONTENT (Scrollable) --- */}
       <Box flexGrow={1} flexShrink={1} paddingY={1} flexDirection="row">
         <Box flexGrow={1} borderStyle="round" paddingX={1} marginRight={1} flexDirection="column">
           {visibleMessages.map((m) => <MessageItem key={m.id} m={m} me={authInfo.username} />)}
         </Box>
         <UserList users={users} me={authInfo.username} />
       </Box>
-
-      {/* --- FOOTER (Fixed) --- */}
       <Box paddingX={2} flexDirection="column" flexShrink={0}>
-        <Text dimColor>Logged in as: {colorize(authInfo.username, authInfo.color)}{authInfo.isAdmin && chalk.red(" (Admin)")}. Type /help for commands.</Text>
+        <Text dimColor>Logged in as: {colorize(authInfo.username)}{authInfo.isAdmin && chalk.red(" (Admin)")}. Type /help for commands.</Text>
         <TextInput value={input} onChange={setInput} onSubmit={submit} placeholder="Say something..." />
         {helpVisible && (
           <Box marginTop={1} borderStyle="round" padding={1} flexDirection="column">
             <Text bold>Commands</Text>
             <Text><Text color="cyan">/nick &lt;name&gt;</Text> - Change your nickname</Text>
-            <Text><Text color="cyan">/color, /c [color]</Text> - Set your color (no value is random)</Text>
             <Text><Text color="cyan">/pm, /dm &lt;@user...&gt; &lt;msg&gt;</Text> - Send a private message</Text>
             <Text><Text color="cyan">/ai &lt;prompt&gt;</Text> - Ask the AI a question</Text>
             <Text><Text color="cyan">/clear</Text> - Clear your local message view</Text>
@@ -540,6 +455,7 @@ const Chat = ({ initialWsUrl }) => {
                 <Text><Text color="cyan">/mute &lt;@user...&gt; [min]</Text> - Mute users</Text>
                 <Text><Text color="cyan">/unmute &lt;@user...&gt;</Text> - Unmute users</Text>
                 <Text><Text color="cyan">/broadcast, /b &lt;msg&gt;</Text> - Send a broadcast message</Text>
+                <Text><Text color="cyan">/clearbroadcast</Text> - Clear the pinned broadcast message</Text>
                 <Text><Text color="cyan">/clearall</Text> - Clear chat history for all users</Text>
               </>
             )}

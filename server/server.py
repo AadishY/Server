@@ -8,6 +8,7 @@ import json
 import uuid
 import secrets
 import re
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Any, Set, List
 
@@ -19,6 +20,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# --- Basic Logging Setup ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 APP_NAME = "Akatsuki"
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "Aadish")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Aadish20m")
@@ -27,7 +31,6 @@ GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
 # --- Whitelist Configuration ---
 WHITELISTED_USERS = {"Prakhar", "Priyanshu", "Summit", "Aditya", "Yuvraj", "Yash"}
-# Users added via /login command are stored here temporarily
 TEMPORARY_WHITELIST = set()
 
 app = FastAPI(title=APP_NAME)
@@ -43,12 +46,12 @@ class User:
         self.username = username
         self.role = role
         self.session_id = uuid.uuid4().hex
-        self.color: Optional[str] = None
 
-connected_users: Dict[str, User] = {}  # session_id -> User
-bans: Dict[str, Optional[str]] = {} # username -> expiry_iso_string or None for permanent
-mutes: Dict[str, str] = {} # username -> expiry_iso_string
+connected_users: Dict[str, User] = {}
+bans: Dict[str, Optional[str]] = {}
+mutes: Dict[str, str] = {}
 connected_lock = asyncio.Lock()
+state_lock = asyncio.Lock()
 
 def ts_iso(dt: Optional[datetime] = None) -> str:
     dt = dt or datetime.now(timezone.utc)
@@ -62,21 +65,24 @@ def ts_from_iso(iso_str: str) -> Optional[datetime]:
 
 # --- Persistence ---
 def save_state():
+    logging.info("Attempting to save state to disk...")
     try:
         with open(TEMP_STATE_FILE, "w") as f:
             json.dump({"bans": bans, "mutes": mutes}, f, indent=2)
         os.replace(TEMP_STATE_FILE, STATE_FILE)
-    except (IOError, os.error): pass
+        logging.info("State saved successfully.")
+    except (IOError, os.error) as e:
+        logging.error(f"Failed to save state: {e}")
 
 async def async_save_state():
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, save_state)
+    async with state_lock:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, save_state)
 
 def cleanup_expired_state():
     now = datetime.now(timezone.utc)
     changed = False
 
-    # Use list() to create a copy for safe iteration while deleting
     for u, exp_str in list(bans.items()):
         if exp_str and (expiry := ts_from_iso(exp_str)) and expiry <= now:
             del bans[u]
@@ -98,13 +104,19 @@ def load_state():
             bans = data.get("bans", {})
             mutes = data.get("mutes", {})
             cleanup_expired_state()
-    except (IOError, json.JSONDecodeError): pass
+            logging.info("Server state loaded successfully.")
+    except (IOError, json.JSONDecodeError) as e:
+        logging.error(f"Failed to load state: {e}")
 
 async def state_cleanup_task():
     while True:
         await asyncio.sleep(60 * 5)
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, cleanup_expired_state)
+        logging.info("Running periodic state cleanup task...")
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, cleanup_expired_state)
+        except Exception as e:
+            logging.error(f"Error in state_cleanup_task: {e}", exc_info=True)
 
 # --- Business Logic Helpers (now async and case-insensitive) ---
 async def is_banned(username: str) -> Optional[str]:
@@ -119,7 +131,7 @@ async def is_banned(username: str) -> Optional[str]:
             elif expiry_dt:
                 del bans[ban_user]
                 await async_save_state()
-                return None # Expired
+                return None
     return None
 
 async def is_muted(username: str) -> Optional[str]:
@@ -133,7 +145,7 @@ async def is_muted(username: str) -> Optional[str]:
             elif expiry_dt:
                 del mutes[mute_user]
                 await async_save_state()
-                return None # Expired
+                return None
     return None
 
 # --- User & Session Helpers ---
@@ -167,11 +179,10 @@ async def send_to_user(username: str, obj: dict) -> bool:
     return False
 
 def get_users_list() -> List[Dict[str, Any]]:
-    return [{"name": u.username, "role": u.role, "color": u.color} for u in connected_users.values()]
+    return [{"name": u.username, "role": u.role} for u in connected_users.values()]
 
 # --- Groq AI Helper ---
 async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, model: str = "llama3-8b-8192") -> str:
-    # ... (implementation is unchanged)
     if not GROQ_API_KEY:
         await asyncio.sleep(0.5)
         return f"[Simulated AI Response] You asked: '{user_prompt[:100]}...'"
@@ -208,7 +219,6 @@ async def handle_admin_command(admin_user: User, raw_cmd: str):
             await safe_send(admin_user.ws, {"type": "system", "text": f"User '{username}' has been temporarily whitelisted to join."})
         return
 
-    # ... (other commands unchanged)
     if cmd == "/clearall":
         await broadcast({"type": "clear_chat"})
         await broadcast({"type": "system", "text": f"Chat history cleared by {admin_user.username}."})
@@ -218,6 +228,10 @@ async def handle_admin_command(admin_user: User, raw_cmd: str):
         message = " ".join(args)
         if not message: await safe_send(admin_user.ws, {"type": "system", "text": "Usage: /broadcast <message>"})
         else: await broadcast({"type": "broadcast", "from": admin_user.username, "text": message, "ts": ts_iso()})
+        return
+
+    if cmd == "/clearbroadcast":
+        await broadcast({"type": "clear_broadcast"})
         return
 
     target_users, remaining_args = parse_command_args(args)
@@ -242,7 +256,6 @@ async def handle_admin_command(admin_user: User, raw_cmd: str):
                 await safe_send(target_user.ws, {"type": "system", "text": f"You have been banned {d_str}."})
                 await target_user.ws.close(code=status.WS_1008_POLICY_VIOLATION)
         elif cmd == "/unban":
-            # Find the case-insensitive match to delete
             user_to_unban = next((u for u in bans if u.lower() == username.lower()), None)
             if user_to_unban:
                 del bans[user_to_unban]
@@ -264,7 +277,6 @@ async def handle_admin_command(admin_user: User, raw_cmd: str):
     if changed_state: await async_save_state()
 
 async def handle_message(user: User, data: dict):
-    # ... (implementation is unchanged)
     typ = data.get("type")
 
     if typ in ("message", "pm"):
@@ -273,7 +285,7 @@ async def handle_message(user: User, data: dict):
             return
 
     if typ == "message":
-        await broadcast({"type": "message", "id": data.get("id", str(uuid.uuid4())), "from": user.username, "text": data.get("text", ""), "ts": ts_iso(), "color": user.color})
+        await broadcast({"type": "message", "id": data.get("id", str(uuid.uuid4())), "from": user.username, "text": data.get("text", ""), "ts": ts_iso()})
     elif typ == "command":
         if user.role == "admin": await handle_admin_command(user, data.get("raw", ""))
         else: await safe_send(user.ws, {"type": "system", "text": "You do not have permission to use admin commands."})
@@ -284,9 +296,6 @@ async def handle_message(user: User, data: dict):
             await broadcast({"type": "system", "text": f"{old_nick} is now known as {new_nick}."})
             async with connected_lock: await broadcast({"type": "users", "users": get_users_list()})
         else: await safe_send(user.ws, {"type": "system", "text": "Invalid or taken nickname."})
-    elif typ == "color":
-        user.color = data.get("color")
-        async with connected_lock: await broadcast({"type": "users", "users": get_users_list()})
     elif typ == "pm":
         recipients, text = data.get("to", []), data.get("text", "")
         if recipients and text:
@@ -340,7 +349,6 @@ async def websocket_endpoint(ws: WebSocket):
             else: return await safe_send(ws, {"type": "auth_failed", "reason": "Invalid admin credentials"})
 
         user = User(websocket=ws, username=req_name, role=role)
-        user.color = auth_msg.get("color")
 
         if req_name_lower in TEMPORARY_WHITELIST:
             TEMPORARY_WHITELIST.remove(req_name_lower)
@@ -351,7 +359,7 @@ async def websocket_endpoint(ws: WebSocket):
             users_list = get_users_list()
 
         await safe_send(ws, {"type": "auth_ok", "username": user.username, "role": user.role})
-        await broadcast({"type": "user_join", "user": {"name": user.username, "role": user.role, "color": user.color}}, exclude_ids={user.session_id})
+        await broadcast({"type": "user_join", "user": {"name": user.username, "role": user.role}}, exclude_ids={user.session_id})
         await safe_send(ws, {"type": "users", "users": users_list})
 
         welcome_prompt = f"Generate a short, cool, welcoming message for '{user.username}' joining '{APP_NAME}' chat."
@@ -366,7 +374,7 @@ async def websocket_endpoint(ws: WebSocket):
         if user:
             async with connected_lock:
                 if user.session_id in connected_users: del connected_users[user.session_id]
-            await broadcast({"type": "user_leave", "user": {"name": user.username, "role": user.role, "color": user.color}})
+            await broadcast({"type": "user_leave", "user": {"name": user.username, "role": user.role}})
             await broadcast({"type": "system", "text": f"{user.username} has left the chat."})
 
 @app.on_event("startup")
