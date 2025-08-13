@@ -145,6 +145,11 @@ async def handle_admin_command(admin_name: str, raw_cmd: str):
         await broadcast({"type": "broadcast", "from": admin_name, "text": message, "ts": ts_iso()})
         return
 
+    if cmd == "/clearall":
+        await broadcast({"type": "clear_chat"})
+        await broadcast({"type": "system", "text": f"Chat history cleared by {admin_name}."})
+        return
+
     if not args and cmd not in ["/bans"]:
         await send_to_user(admin_name, {"type": "system", "text": "Command requires an argument."})
         return

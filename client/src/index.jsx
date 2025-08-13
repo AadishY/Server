@@ -128,7 +128,7 @@ const WAKING_MESSAGES = [
   "Almost there...",
 ];
 
-const LoginUI = ({ onLogin, status }) => {
+const LoginUI = ({ onLogin, status, error }) => {
   const [name, setName] = useState("");
   const [pwd, setPwd] = useState("");
   const [isAskingPwd, setIsAskingPwd] = useState(false);
@@ -167,6 +167,7 @@ const LoginUI = ({ onLogin, status }) => {
         <Text bold cyan>{SERVER_NAME}</Text>
         <Text dimColor>Status: {status}</Text>
       </Box>
+      {error && <Text color="red">{error}</Text>}
       <Box borderStyle="round" padding={1} flexDirection="column">
         <Text bold>{isAskingPwd ? `Enter password for ${ADMIN_USERNAME}` : "Enter a username to join"}</Text>
         <Box marginTop={1}>
@@ -231,9 +232,13 @@ const Chat = ({ initialWsUrl }) => {
   const [input, setInput] = useState("");
   const [helpVisible, setHelpVisible] = useState(false);
   const [wsUrl, setWsUrl] = useState(null);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [loginError, setLoginError] = useState(null);
 
   const authInfoRef = useRef(authInfo);
   authInfoRef.current = authInfo;
+
+  const isScrolledUp = scrollOffset > 0;
 
   const pushSys = useCallback((text) => setMessages(m => [...m, { id: uuidv4(), type: "system", text, ts: nowISO() }]), []);
 
@@ -247,11 +252,13 @@ const Chat = ({ initialWsUrl }) => {
     switch (data.type) {
       case "auth_ok":
         setAuthInfo(auth => ({...auth, username: data.username, isAdmin: data.role === "admin" }));
+        setLoginError(null);
         setMessages([]); // Clear auth messages
         pushSys(`Authenticated as ${data.username} (${data.role}). Welcome!`);
         break;
       case "auth_failed":
-        pushSys(`Auth failed: ${data.reason}. Please restart.`);
+        setLoginError(data.reason);
+        setAuthInfo(null);
         setWsUrl(null);
         break;
       case "users": setUsers(data.users || []); break;
@@ -261,12 +268,18 @@ const Chat = ({ initialWsUrl }) => {
       case "user_leave":
         setUsers(u => u.filter(x => x.name !== data.user.name));
         break;
+      case "clear_chat":
+        setMessages([]);
+        break;
       case "message": case "ai_resp": case "pm": case "reaction": case "system": case "broadcast":
         setMessages(m => [...m, { id: data.id || uuidv4(), ...data }]);
+        if (!isScrolledUp) {
+          setScrollOffset(0);
+        }
         break;
       default: pushSys(`Received unknown message type: ${JSON.stringify(data)}`);
     }
-  }, [pushSys]);
+  }, [isScrolledUp]);
 
   const onClose = useCallback((code) => pushSys(`Disconnected (code: ${code}). Reconnecting...`), [pushSys]);
   const onError = useCallback((err) => pushSys(`Connection error: ${err.message || "Unknown"}`), [pushSys]);
@@ -290,7 +303,11 @@ const Chat = ({ initialWsUrl }) => {
         setHelpVisible(v => !v);
         return;
       case "/clear":
-        setMessages([]);
+        if (authInfo.isAdmin) {
+          sent = ws.send({ type: "command", raw: "/clearall" });
+        } else {
+          setMessages([]);
+        }
         return;
       case "/nick":
         if (!args[0]) { pushSys("Usage: /nick <newname>"); return; }
@@ -318,6 +335,7 @@ const Chat = ({ initialWsUrl }) => {
       case "/ai": {
         const prompt = args.join(" ");
         if (!prompt) { pushSys("Usage: /ai <prompt...>"); return; }
+        setMessages(m => [...m, { id: uuidv4(), type: "message", from: authInfo.username, text: `(to AI) ${prompt}`, ts: nowISO(), color: authInfo.color }]);
         sent = ws.send({ type: "ai", text: prompt });
         break;
       }
@@ -347,21 +365,25 @@ const Chat = ({ initialWsUrl }) => {
     else pushSys("Message could not be sent. You may be disconnected.");
   };
 
-  useInput((inputKey, key) => {
-    if (key.ctrl && inputKey === "c") { ws.close(); exit(); }
+  useInput((input, key) => {
+    if (key.ctrl && input === "c") { ws.close(); exit(); }
     if (key.escape) setHelpVisible(false);
+    if (key.upArrow) setScrollOffset(o => Math.min(messages.length - 1, o + 1));
+    if (key.downArrow) setScrollOffset(o => Math.max(0, o - 1));
   }, { isActive: !!authInfo });
 
   const handleLogin = useCallback((loginData) => {
+    setLoginError(null);
     setAuthInfo(loginData);
     setWsUrl(initialWsUrl);
   }, [initialWsUrl]);
 
-  if (!authInfo) return <LoginUI onLogin={handleLogin} status={ws.status} />;
+  if (!authInfo) return <LoginUI onLogin={handleLogin} status={ws.status} error={loginError} />;
 
-  // IMPROVEMENT: More accurate height calculation for more message space.
   const maxMsgLines = Math.max(8, (stdout?.rows || 24) - 8);
-  const visibleMessages = messages.slice(-maxMsgLines);
+  const endIndex = messages.length - scrollOffset;
+  const startIndex = Math.max(0, endIndex - maxMsgLines);
+  const visibleMessages = messages.slice(startIndex, endIndex);
 
   return (
     <Box flexDirection="column" height="100%" width="100%">
