@@ -1,21 +1,15 @@
-# Akatsuki Chat UI
+# Akatsuki Chat
 
-This project is a modern, web-based GUI for the Akatsuki chat server. It is built with React and provides a feature-rich user experience with a focus on aesthetics and usability.
+This project contains the backend server and a modern desktop client for the Akatsuki Chat service.
 
-## Features
+## Project Structure
 
-- **Modern UI**: A beautiful glassmorphism-inspired design with smooth animations.
-- **Real-time Messaging**: Instant messaging in a clean and intuitive interface.
-- **Command Support**: Full support for all server commands.
-- **Autocompletion**: Discord-style autocompletion for commands and @mentions.
-- **Emoji Picker**: Easily add emojis to your messages.
-- **AI Integration**: Chat with an AI using the `/ai` command.
-- **Markdown Support**: Format your messages with markdown (`*bold*`, `_italic_`, etc.).
-- **Custom Cursor**: A unique cursor for a distinct feel.
+- `/server`: The Python-based WebSocket server.
+- `/new_client`: The new desktop client built with Electron and React.
 
 ## Installation and Usage
 
-This project consists of a Python-based server and a React-based client. You can run them from source for development or install the client as a package.
+You need to run both the server and the client to use the application.
 
 ### 1. Server Setup
 
@@ -23,7 +17,7 @@ The server is built with FastAPI and Uvicorn.
 
 1.  **Navigate to the server directory:**
     ```bash
-    cd aadishui-server/server
+    cd server
     ```
 
 2.  **Create a virtual environment (optional but recommended):**
@@ -41,16 +35,15 @@ The server is built with FastAPI and Uvicorn.
     ```bash
     uvicorn server:app --host 0.0.0.0 --port 8000
     ```
+    The server will be running at `ws://localhost:8000/ws`.
 
 ### 2. Client Setup
 
-#### Option A: Run from Source (for development)
-
-The client is a React application built with Vite.
+The client is an Electron application.
 
 1.  **Navigate to the client directory:**
     ```bash
-    cd aadishui-server/client
+    cd new_client
     ```
 
 2.  **Install dependencies:**
@@ -62,27 +55,23 @@ The client is a React application built with Vite.
     ```bash
     npm run dev
     ```
-    This will open the chat client in your default browser, usually at `http://localhost:5173`.
+    This will start the React development server and launch the Electron application.
 
-#### Option B: Install and Run as a Command
+### Building the Client
 
-You can also install the package globally to get the `aadishui` command.
+To build a distributable desktop application, run the following command in the `new_client` directory:
 
-1.  **Navigate to the `aadishui-server` directory:**
-    ```bash
-    cd aadishui-server
-    ```
-2.  **Install the package globally:**
-    ```bash
-    npm install -g .
-    ```
-3.  **Run the client from anywhere:**
-    ```bash
-    aadishui
-    ```
-    This will automatically serve the client and open it in your browser.
+```bash
+npm run build
+```
+
+This will create an executable file in the `new_client/release` directory.
+
+---
 
 ## Commands
+
+The client supports the following commands, which can be typed into the message box.
 
 ### User Commands
 
@@ -102,21 +91,3 @@ You can also install the package globally to get the `aadishui` command.
 | `/unban <@user>` | Unban a user. |
 | `/mute <@user> [minutes]` | Mute a user. Defaults to 5 minutes. |
 | `/unmute <@user>` | Unmute a user. |
-| `/tag <@user> --<tag>` | Assign a custom tag to a user. |
-| `/removetag <@user>` | Remove a user's custom tag. |
-| `/broadcast <message>` | Send a broadcast message. |
-| `/clearbroadcast` | Clear the broadcast message. |
-| `/clearall` | Clear the chat history for all users. |
-| `/login <@user>` | Allow a non-whitelisted user to join. |
-
-### Text Formatting
-
-| Syntax | Example | Renders as |
-| --- | --- | --- |
-| `*text*` | `*bold*` | **bold** |
-| `_text_` | `_italic_` | *italic* |
-| `__text__` | `__underline__` | <u>underline</u> |
-| `~text~` | `~strikethrough~` | ~~strikethrough~~ |
-| \`code\` | \`console.log("Hello")\` | `console.log("Hello")` |
-| \`\`\`js\ncode\n\`\`\` | \`\`\`js\nconsole.log("Hello")\n\`\`\` | Code block |
-| `> text` | `> blockquote` | > blockquote |
