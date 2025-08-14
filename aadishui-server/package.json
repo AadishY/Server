@@ -1,0 +1,23 @@
+{
+  "name": "aadishui-server",
+  "version": "1.0.0",
+  "description": "A modern web GUI for the Akatsuki chat server.",
+  "main": "index.js",
+  "bin": {
+    "aadishui": "./bin/aadishui.js"
+  },
+  "scripts": {
+    "start": "node ./bin/aadishui.js",
+    "prepack": "cd client && npm install && npm run build"
+  },
+  "files": [
+    "bin",
+    "client/dist"
+  ],
+  "author": "Aadish",
+  "license": "MIT",
+  "dependencies": {
+    "open": "^8.4.0",
+    "serve-handler": "^6.1.3"
+  }
+}
