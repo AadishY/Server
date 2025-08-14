@@ -23,10 +23,13 @@ const shortTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString();
 
 // New color palette and selection logic
 const DULL_COLORS = [
-    '#8A2BE2', '#5F9EA0', '#D2691E', '#FF7F50', '#6495ED',
-    '#DC143C', '#00FFFF', '#00008B', '#B8860B', '#006400',
-    '#8B008B', '#556B2F', '#FF8C00', '#9932CC', '#8B0000'
+    '#5F9EA0', '#D2691E', '#FF7F50', '#6495ED', '#00008B', '#B8860B', '#006400',
+    '#8B008B', '#556B2F',   '#5E81AC', '#81A1C1', '#88C0D0', '#A3BE8C', '#8FBC8F',
+    '#B4A07D', '#A89984', '#D08770', '#BF616A', '#A0655F', '#927E71', '#7B8B6F',
+    '#6A8A82', '#A27B77', '#C4A484', '#9E7B9B', '#8A7F8D', '#8B6F4E', '#B9A06A',
+    '#7F9E9D', '#A0A89F', '#9C8B73', '#8D847E', '#A9A0B2', '#7E8FA6'
 ];
+
 
 const defaultColorFor = (name) => {
     const hash = crypto.createHash('md5').update(name || "").digest();
@@ -130,7 +133,7 @@ const MessageItem = React.memo(({ m, me }) => {
     return (
       <Box borderStyle="round" borderColor="magenta" paddingX={1}>
         <Text>
-            <Text dimColor>{`[BCAST from ${m.from}] `}</Text>
+            <Text dimColor>{`[📌${m.from}] `}</Text>
             <Text color="magentaBright" bold>{formatMessage(m.text)}</Text>
         </Text>
       </Box>
@@ -231,7 +234,7 @@ const UserList = React.memo(({ users, me }) => {
       {users.map((u) => {
         let tagElement = null;
         if (u.tag) {
-          tagElement = <Text backgroundColor="blue" color="whiteBright" bold> {u.tag.toUpperCase()} </Text>;
+          tagElement = <Text backgroundColor={defaultColorFor(u.tag)} color="whiteBright" bold> {u.tag.toUpperCase()} </Text>;
         } else if (u.role === 'admin') {
           tagElement = <Text backgroundColor="red" color="whiteBright" bold> ADMIN </Text>;
         }
@@ -474,7 +477,7 @@ const Chat = ({ initialWsUrl }) => {
             <Text><Text color="cyan">/clear</Text> - Clear your local message view</Text>
             <Text><Text color="cyan">/help</Text> - Toggle this help panel</Text>
             <Text><Text color="cyan">/exit, /e, /quit</Text> - Quit the application</Text>
-            <Text>You can format messages with *bold*, _italic_, __underline__, ~strikethrough~, |obfuscated|, and > blockquote.</Text>
+            <Text>You can format messages with *bold*, _italic_, __underline__, ~strikethrough~, |obfuscated|, and {'>'} blockquote.</Text>
             {authInfo.isAdmin && (
               <>
                 <Box marginTop={1} />
