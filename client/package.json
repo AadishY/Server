@@ -1,18 +1,31 @@
 {
   "name": "aadish-server",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "description": "A terminal-based chat client for the Akatsuki chat server, providing a rich CLI user experience.",
+  "author": "Aadish",
+  "license": "MIT",
   "type": "module",
-  "description": "Ink CLI client for Akatsuki single-room chat",
   "main": "src/index.jsx",
+  "bin": {
+    "aadish": "./src/index.jsx"
+  },
   "scripts": {
     "build": "esbuild src/index.jsx --bundle --platform=node --outfile=dist/index.cjs --format=cjs",
     "start": "tsx src/index.jsx"
   },
-  "bin": {
-    "aadish": "./src/index.jsx"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/your-repo.git"
   },
-  "author": "You",
-  "license": "MIT",
+  "keywords": [
+    "chat",
+    "cli",
+    "terminal",
+    "ink",
+    "react",
+    "websocket",
+    "akatsuki"
+  ],
   "dependencies": {
     "chalk": "^5.5.0",
     "ink": "^6.1.0",
