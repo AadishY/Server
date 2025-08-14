@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { render, Box, Text, useApp, useStdout, useInput } from "ink";
 import TextInput from "ink-text-input";
 import Spinner from "ink-spinner";
@@ -438,12 +438,38 @@ const Chat = ({ initialWsUrl }) => {
     setWsUrl(initialWsUrl);
   }, [initialWsUrl]);
 
-  if (!authInfo) return <LoginUI onLogin={handleLogin} status={ws.status} error={loginError} />;
-
   const maxMsgLines = Math.max(8, (stdout?.rows || 24) - 8 - (pinnedMessage ? 3 : 0));
-  const endIndex = messages.length - scrollOffset;
-  const startIndex = Math.max(0, endIndex - maxMsgLines);
-  const visibleMessages = messages.slice(startIndex, endIndex);
+  const maxMsgLinesRef = useRef(maxMsgLines);
+  maxMsgLinesRef.current = maxMsgLines;
+
+  useEffect(() => {
+    if (!authInfo) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setMessages(currentMessages => {
+        const messagesToKeep = maxMsgLinesRef.current * 3;
+        if (currentMessages.length > messagesToKeep) {
+          setScrollOffset(0);
+          return currentMessages.slice(-messagesToKeep);
+        }
+        return currentMessages;
+      });
+    }, 2 * 60 * 1000); // 2 minutes
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [authInfo, setMessages, setScrollOffset]);
+
+  const visibleMessages = useMemo(() => {
+    const endIndex = messages.length - scrollOffset;
+    const startIndex = Math.max(0, endIndex - maxMsgLines);
+    return messages.slice(startIndex, endIndex);
+  }, [messages, scrollOffset, maxMsgLines]);
+
+  if (!authInfo) return <LoginUI onLogin={handleLogin} status={ws.status} error={loginError} />;
 
   return (
     <Box flexDirection="column" height="100%" width="100%">
