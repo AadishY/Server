@@ -233,7 +233,7 @@ async def call_groq_api(user_prompt: str, system_prompt: Optional[str] = None, m
         return f"[AI API Error] Could not connect: {e}"
 
 # --- Command Handlers ---
-def parse_command_args(args: List[str]) -> (Set[str], List[str]):
+def parse_command_args(args: List[str]) -> tuple[Set[str], List[str]]:
     users, remaining_args = set(), []
     for arg in args:
         if arg.startswith('@'): users.add(arg[1:])
@@ -478,8 +478,8 @@ async def websocket_endpoint(ws: WebSocket):
         if LATEST_BROADCAST:
             await safe_send(ws, LATEST_BROADCAST)
 
-        welcome_system_prompt = f"You are a witty and welcoming chatbot for the '{APP_NAME}' chat server. Your task is to generate a very short, cool, and slightly mysterious welcome message for a new user named '{user.username}'. Keep it under 15 words. Be creative."
-        welcome_message = await call_groq_api(f"A user named {user.username} has joined.", system_prompt=welcome_system_prompt, model="llama-3.1-8b-instant")
+        welcome_system_prompt = f"You are a witty and welcoming chatbot for the '{APP_NAME}' chat server. Your task is to generate a very short, cool, welcome message for a new user named '{user.username}'. Keep it under 15 words. Be creative."
+        welcome_message = await call_groq_api(f"A user named {user.username} has joined.", system_prompt=welcome_system_prompt, model="meta-llama/llama-4-maverick-17b-128e-instruct")
         await safe_send(ws, {"type": "system", "text": welcome_message})
 
         while True:
