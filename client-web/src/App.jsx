@@ -1,19 +1,45 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
-import crypto from "crypto-js"; // Using crypto-js for consistent hashing in browser
+import crypto from "crypto-js";
 
 // --- Config ---
 const SERVER_NAME = "Akatsuki";
-// Use the env variable from Vite, with the hardcoded URL as a fallback
 const DEFAULT_WS = import.meta.env.VITE_DEFAULT_WS_URL || "wss://server-19jl.onrender.com/ws";
 const RENDER_STATS_URL = "https://server-19jl.onrender.com/stats";
-const ADMIN_USERNAME = "Aadish"; // Hardcoding defaults, as process.env doesn't exist here
+const ADMIN_USERNAME = "Aadish";
+
+// --- Command List for Autocomplete ---
+const COMMAND_LIST = [
+  { cmd: "/nick", desc: "<name> - Change your nickname." },
+  { cmd: "/pm", desc: "<@user...> <msg> - Send a private message." },
+  { cmd: "/dm", desc: "<@user...> <msg> - (Alias for /pm)" },
+  { cmd: "/ai", desc: "[--model] <prompt> - Ask the AI." },
+  { cmd: "/clear", desc: "Clear your local message view." },
+  { cmd: "/help", desc: "Toggle this help panel." },
+  { cmd: "/exit", desc: "Disconnect from the server." },
+  { cmd: "/e", desc: "(Alias for /exit)" },
+  { cmd: "/quit", desc: "(Alias for /exit)" },
+];
+
+const ADMIN_COMMAND_LIST = [
+  { cmd: "/login", desc: "<@user> - Allow a user to join once." },
+  { cmd: "/kick", desc: "<@user...> [reason] - Kick users." },
+  { cmd: "/ban", desc: "<@user...> [min] [reason] - Ban users." },
+  { cmd: "/unban", desc: "<@user...> - Unban users." },
+  { cmd: "/mute", desc: "<@user...> [min] - Mute users." },
+  { cmd: "/unmute", desc: "<@user...> - Unmute users." },
+  { cmd: "/tag", desc: "<@user> --<tag> - Assign a tag." },
+  { cmd: "/removetag", desc: "<@user...> - Remove a tag." },
+  { cmd: "/broadcast", desc: "<msg> - Send a pinned broadcast." },
+  { cmd: "/b", desc: "(Alias for /broadcast)" },
+  { cmd: "/clearbroadcast", desc: "Clear the pinned broadcast." },
+  { cmd: "/clearall", desc: "Clear chat history for ALL users." },
+];
 
 // --- Helper Functions ---
 const nowISO = () => new Date().toISOString();
-const shortTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString();
+const shortTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
-// Color palette
 const DULL_COLORS = [
     '#5F9EA0', '#D2691E', '#FF7F50', '#6495ED', '#00008B', '#B8860B', '#006400',
     '#8B008B', '#556B2F',   '#5E81AC', '#81A1C1', '#88C0D0', '#A3BE8C', '#8FBC8F',
@@ -23,19 +49,16 @@ const DULL_COLORS = [
 ];
 
 const defaultColorFor = (name) => {
-    // Use crypto-js for MD5 in the browser
     const hash = crypto.MD5(name || "").toString();
     const hashByte = parseInt(hash.substring(0, 2), 16);
     return DULL_COLORS[hashByte % DULL_COLORS.length];
 };
 
-// Returns a style object instead of a chalk string
 const colorize = (name) => {
-  if (!name) return { fontWeight: 'bold' }; // Style for 'system'
-  return { color: defaultColorFor(name), fontWeight: 'bold' };
+  if (!name) return { fontWeight: '600' };
+  return { color: defaultColorFor(name), fontWeight: '600' };
 };
 
-// Formats message with HTML tags instead of Ink components
 const formatMessage = (text) => {
     const parts = text.split(/(\*[^*]+\*|~[^~]+~|_[^_]+_|__[^_]+__|\|[^|]+\||^>.*)/gm);
     return parts.map((part, i) => {
@@ -62,7 +85,6 @@ function useWs(url, onOpen, onMsg, onClose, onError) {
     const connect = () => {
       if (!mounted) return;
       setStatus("connecting");
-      // Use browser's native WebSocket
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -87,7 +109,7 @@ function useWs(url, onOpen, onMsg, onClose, onError) {
         if (!mounted) return;
         setStatus("closed");
         onClose?.(event.code);
-        if (event.code === 1008) { // Policy Violation
+        if (event.code === 1008) {
             if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
             return;
         }
@@ -146,7 +168,6 @@ const MessageItem = React.memo(({ m, me }) => {
         <div className="message pm-message">
             <span className="timestamp">{`[${ts}]`}</span>
             <span className="from">{fromLabel}</span>
-            {/* This is the fix: */}
             <span className="arrow"> {'->'} </span>
             <span className="to">{m.to.join(",")}</span>: 
             <span className="message-body"> {formatMessage(m.text)}</span>
@@ -268,7 +289,7 @@ const LoginUI = ({ onLogin, status, error }) => {
           )}
           <button type="submit">Join</button>
         </form>
-        <p style={{color: 'var(--system-color)', fontSize: '0.8rem', textAlign: 'center', marginTop: '16px'}}>
+        <p style={{color: 'var(--text-color-dim)', fontSize: '0.8rem', textAlign: 'center', marginTop: '16px'}}>
           {isAskingPwd && <a href="#" onClick={(e) => { e.preventDefault(); setIsAskingPwd(false); setPwd(''); }}>Back to username</a>}
         </p>
       </div>
@@ -276,7 +297,7 @@ const LoginUI = ({ onLogin, status, error }) => {
   );
 };
 
-const UserList = React.memo(({ users, me }) => {
+const UserList = React.memo(({ users, me, onUserClick }) => {
   return (
     <div className="user-list">
       <h3>Users ({users.length})</h3>
@@ -289,7 +310,7 @@ const UserList = React.memo(({ users, me }) => {
         }
 
         return (
-          <div key={u.name} className="user-list-item">
+          <div key={u.name} className="user-list-item" onClick={() => onUserClick(u.name)}>
             {tagElement}
             <span style={colorize(u.name)}>{u.name}</span>
             {u.name === me && <span className="you">(you)</span>}
@@ -299,6 +320,35 @@ const UserList = React.memo(({ users, me }) => {
     </div>
   );
 });
+
+const AutocompletePanel = ({ suggestions, activeIndex, onSelect }) => {
+  if (suggestions.length === 0) return null;
+
+  return (
+    <div className="autocomplete-panel">
+      {suggestions.map((item, index) => {
+        const isActive = index === activeIndex;
+        return (
+          <div
+            key={item.text}
+            className={`autocomplete-item ${isActive ? 'active' : ''}`}
+            onClick={() => onSelect(item)}
+            onMouseEnter={() => {}} // We'll let keyboard handle active state
+          >
+            {item.type === 'command' ? (
+              <>
+                <span className="command-name">{item.text}</span>
+                <span className="command-desc">{item.desc}</span>
+              </>
+            ) : (
+              <span style={colorize(item.text)}>{item.text}</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 function parseMentions(parts) {
   const recipients = new Set();
@@ -326,18 +376,27 @@ const Chat = ({ initialWsUrl }) => {
   const [wsUrl, setWsUrl] = useState(null);
   const [loginError, setLoginError] = useState(null);
   const [pinnedMessage, setPinnedMessage] = useState(null);
+  const [autocomplete, setAutocomplete] = useState({
+    suggestions: [],
+    activeIndex: 0,
+    isVisible: false,
+    query: "",
+    type: null, // 'command' or 'user'
+    prefix: "", // e.g., "/" or "/pm @Aadish @"
+  });
   
   const authInfoRef = useRef(authInfo);
   authInfoRef.current = authInfo;
   
   const msgListRef = useRef(null);
+  const inputRef = useRef(null);
   
   const pushSys = useCallback((text) => setMessages(m => [...m, { id: uuidv4(), type: "system", text, ts: nowISO() }]), []);
 
   const onOpen = useCallback(() => {
     pushSys("Connection open. Authenticating...");
     if (authInfoRef.current) ws.send({ type: "auth", ...authInfoRef.current });
-  }, []); // ws is not a dependency here
+  }, []);
 
   const onMsg = useCallback((data) => {
     if (!data?.type) return;
@@ -347,6 +406,7 @@ const Chat = ({ initialWsUrl }) => {
         setLoginError(null);
         setMessages([]);
         pushSys(`Authenticated as ${data.username} (${data.role}). Welcome!`);
+        if (inputRef.current) inputRef.current.focus();
         break;
       case "auth_failed":
         setLoginError(data.reason);
@@ -371,8 +431,6 @@ const Chat = ({ initialWsUrl }) => {
         break;
       case "broadcast":
         setPinnedMessage(data);
-        // Don't add to messages if it's just a pin, let it be separate
-        // setMessages(m => [...m, { id: data.id || uuidv4(), ...data }]);
         break;
       case "clear_broadcast":
         setPinnedMessage(null);
@@ -401,27 +459,83 @@ const Chat = ({ initialWsUrl }) => {
 
   const ws = useWs(wsUrl, onOpen, onMsg, onClose, onError);
   
-  // Auto-scroll logic
   useEffect(() => {
     if (msgListRef.current) {
         msgListRef.current.scrollTop = msgListRef.current.scrollHeight;
     }
   }, [messages]);
 
-  // Auto-prune messages
   useEffect(() => {
     if (!authInfo) return;
     const timer = setInterval(() => {
       setMessages(currentMessages => {
-        const messagesToKeep = 300; // Keep 300 messages
+        const messagesToKeep = 300;
         if (currentMessages.length > messagesToKeep) {
           return currentMessages.slice(-messagesToKeep);
         }
         return currentMessages;
       });
-    }, 2 * 60 * 1000); // 2 minutes
+    }, 2 * 60 * 1000);
     return () => clearInterval(timer);
   }, [authInfo]);
+
+  // --- Autocomplete Logic ---
+  useEffect(() => {
+    if (!input) {
+      setAutocomplete(prev => ({ ...prev, isVisible: false }));
+      return;
+    }
+
+    const fullCommandList = authInfo?.isAdmin ? [...COMMAND_LIST, ...ADMIN_COMMAND_LIST] : COMMAND_LIST;
+    
+    // Command autocomplete
+    if (input.startsWith("/") && !input.includes(" ")) {
+      const query = input.slice(1).toLowerCase();
+      const suggestions = fullCommandList
+        .filter(cmd => cmd.cmd.slice(1).startsWith(query))
+        .map(cmd => ({ type: 'command', text: cmd.cmd, desc: cmd.desc }));
+      
+      setAutocomplete({
+        suggestions,
+        activeIndex: 0,
+        isVisible: suggestions.length > 0,
+        query,
+        type: 'command',
+        prefix: '/',
+      });
+      return;
+    }
+
+    // User autocomplete (e.g., @, /pm @, /kick @)
+    const atIndex = input.lastIndexOf('@');
+    if (atIndex > -1) {
+        const query = input.slice(atIndex + 1).toLowerCase();
+        // Prevent suggesting when there's a space after @
+        if (query.includes(" ")) {
+           setAutocomplete(prev => ({ ...prev, isVisible: false }));
+           return;
+        }
+
+        const suggestions = users
+            .filter(u => u.name.toLowerCase().startsWith(query) && u.name !== authInfo.username)
+            .map(u => ({ type: 'user', text: u.name }));
+        
+        setAutocomplete({
+            suggestions,
+            activeIndex: 0,
+            isVisible: suggestions.length > 0,
+            query,
+            type: 'user',
+            prefix: input.slice(0, atIndex + 1), // e.g., "/pm @Aadish @"
+        });
+        return;
+    }
+
+    // No triggers, hide panel
+    setAutocomplete(prev => ({ ...prev, isVisible: false }));
+
+  }, [input, users, authInfo]);
+
 
   const handleCommand = useCallback((text) => {
     const parts = text.trim().split(/\s+/);
@@ -476,8 +590,7 @@ const Chat = ({ initialWsUrl }) => {
     else if (cmd !== "/help" && cmd !== "/clear") pushSys("Command could not be sent. You may be disconnected.");
   }, [ws, pushSys]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = () => {
     const trimmed = input.trim();
     const currentAuth = authInfoRef.current;
     if (!trimmed || !currentAuth) return;
@@ -489,11 +602,63 @@ const Chat = ({ initialWsUrl }) => {
     else pushSys("Message could not be sent. You may be disconnected.");
   };
 
+  const applySuggestion = (suggestion) => {
+    if (!suggestion) return;
+    
+    let newValue = "";
+    if (suggestion.type === 'command') {
+      newValue = `${suggestion.text} `; // Add a space after command
+    } else if (suggestion.type === 'user') {
+      newValue = `${autocomplete.prefix}${suggestion.text} `; // Add a space after username
+    }
+    
+    setInput(newValue);
+    setAutocomplete(prev => ({ ...prev, isVisible: false }));
+    if (inputRef.current) inputRef.current.focus();
+  };
+
+  const handleKeyDown = (e) => {
+    if (autocomplete.isVisible && autocomplete.suggestions.length > 0) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setAutocomplete(prev => ({
+          ...prev,
+          activeIndex: (prev.activeIndex - 1 + prev.suggestions.length) % prev.suggestions.length
+        }));
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setAutocomplete(prev => ({
+          ...prev,
+          activeIndex: (prev.activeIndex + 1) % prev.suggestions.length
+        }));
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        applySuggestion(autocomplete.suggestions[autocomplete.activeIndex]);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setAutocomplete(prev => ({ ...prev, isVisible: false }));
+      } else if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSubmit();
+      }
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSubmit();
+    }
+  };
+
   const handleLogin = useCallback((loginData) => {
     setLoginError(null);
     setAuthInfo(loginData);
     setWsUrl(initialWsUrl);
   }, [initialWsUrl]);
+
+  const handleUserClick = useCallback((username) => {
+    if (username === authInfo.username) return;
+    // Start a /pm command
+    setInput(prev => `/pm @${username} `);
+    if (inputRef.current) inputRef.current.focus();
+  }, [authInfo]);
 
   if (!authInfo) return <LoginUI onLogin={handleLogin} status={ws.status} error={loginError} />;
 
@@ -514,10 +679,17 @@ const Chat = ({ initialWsUrl }) => {
         <div className="message-list-container" ref={msgListRef}>
           {messages.map((m) => <MessageItem key={m.id} m={m} me={authInfo.username} />)}
         </div>
-        <UserList users={users} me={authInfo.username} />
+        <UserList users={users} me={authInfo.username} onUserClick={handleUserClick} />
       </main>
       
       <footer className="footer">
+        {autocomplete.isVisible && (
+          <AutocompletePanel
+            suggestions={autocomplete.suggestions}
+            activeIndex={autocomplete.activeIndex}
+            onSelect={applySuggestion}
+          />
+        )}
         <div className="login-info">
           Logged in as: <span style={colorize(authInfo.username)}>{authInfo.username}</span>
           {authInfo.isAdmin && <span className="admin-tag"> (Admin)</span>}. 
@@ -525,41 +697,29 @@ const Chat = ({ initialWsUrl }) => {
           for commands.
         </div>
         
-        <form className="input-form" onSubmit={handleSubmit}>
+        <form className="input-form" onSubmit={(e) => e.preventDefault()}>
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="Say something..."
             autoFocus
+            autoComplete="off"
           />
         </form>
         
         {helpVisible && (
           <div className="help-panel">
             <h4>Commands</h4>
-            <p><span className="command">/nick &lt;name&gt;</span> - Change your nickname</p>
-            <p><span className="command">/pm, /dm &lt;@user...&gt; &lt;msg&gt;</span> - Send a private message</p>
-            <p><span className="command">/ai [--&lt;model&gt;] &lt;prompt&gt;</span> - Ask the AI a question</p>
-            <p><span className="command">/clear</span> - Clear your local message view</p>
-            <p><span className="command">/help</span> - Toggle this help panel</p>
-            <p><span className="command">/exit, /e, /quit</span> - Disconnect</p>
+            {COMMAND_LIST.slice(0, 7).map(cmd => <p key={cmd.cmd}><span className="command">{cmd.cmd}</span> {cmd.desc}</p>)}
             <p>Format: *bold*, _italic_, __underline__, ~strikethrough~, |obfuscated|, &gt; blockquote.</p>
             
             {authInfo.isAdmin && (
               <div className="admin-commands">
                 <h4>Admin Commands</h4>
-                <p><span className="command">/login &lt;@user&gt;</span> - Allow a user to join once</p>
-                <p><span className="command">/kick &lt;@user...&gt; [reason]</span> - Kick users</p>
-                <p><span className="command">/ban &lt;@user...&gt; [min] [reason]</span> - Ban users</p>
-                <p><span className="command">/unban &lt;@user...&gt;</span> - Unban users</p>
-                <p><span className="command">/mute &lt;@user...&gt; [min]</span> - Mute users</p>
-                <p><span className="command">/unmute &lt;@user...&gt;</span> - Unmute users</p>
-                <p><span className="command">/tag &lt;@user&gt; --&lt;tag&gt;</span> - Assign a tag</p>
-                <p><span className="command">/removetag &lt;@user...&gt;</span> - Remove a tag</p>
-                <p><span className="command">/broadcast, /b &lt;msg&gt;</span> - Send a broadcast</p>
-                <p><span className="command">/clearbroadcast</span> - Clear the broadcast</p>
-                <p><span className="command">/clearall</span> - Clear chat for all users</p>
+                {ADMIN_COMMAND_LIST.map(cmd => <p key={cmd.cmd}><span className="command">{cmd.cmd}</span> {cmd.desc}</p>)}
               </div>
             )}
           </div>
@@ -568,14 +728,6 @@ const Chat = ({ initialWsUrl }) => {
     </div>
   );
 };
-
-// Add crypto-js to the global scope if it's not already
-// This is a common pattern for libraries that were designed for scripts
-if (typeof window !== 'undefined' && !window.crypto) {
-  // A simple polyfill for crypto.MD5 if not present (this part might need adjusting based on how crypto-js is imported)
-  // For this setup, we'll assume the import works. If not, you might need to install `crypto-js`
-  // `npm install crypto-js`
-}
 
 function App() {
   return <Chat initialWsUrl={DEFAULT_WS} />
