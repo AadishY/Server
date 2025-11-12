@@ -188,6 +188,8 @@ const MessageItem = React.memo(({ m, me }) => {
     else if (textLower.includes("kicked")) { icon = "👢"; className += " system-kick"; }
     else if (textLower.includes("banned")) { icon = "🚫"; className += " system-ban"; }
     else if (textLower.includes("muted")) { icon = "🔇"; className += " system-mute"; }
+    else if (textLower.includes("unbanned")) { icon = "✅"; className += " system-join"; }
+    else if (textLower.includes("unmuted")) { icon = "🔈"; className += " system-join"; }
 
     return (
       <div className={className}>
@@ -252,7 +254,7 @@ const WAKING_MESSAGES = [
 ];
 
 const LoginUI = ({ onLogin, status, error }) => {
-  // ... (This component remains unchanged from the previous step)
+  // ... (This component remains unchanged)
   const [name, setName] = useState("");
   const [pwd, setPwd] = useState("");
   const [isAskingPwd, setIsAskingPwd] = useState(false);
@@ -348,10 +350,9 @@ const LoginUI = ({ onLogin, status, error }) => {
 };
 
 // Updated UserList Component with Sorting
-const UserList = React.memo(({ users, me, onUserClick }) => {
+const UserList = React.memo(({ users, me, onUserClick, onClose, className = '' }) => {
   
   const sortedUsers = useMemo(() => {
-    // New sorting logic
     const getSortPriority = (u) => {
       if (u.role === 'admin') return 1;
       if (u.tag) return 2;
@@ -361,48 +362,50 @@ const UserList = React.memo(({ users, me, onUserClick }) => {
     return [...users].sort((a, b) => {
       const priorityA = getSortPriority(a);
       const priorityB = getSortPriority(b);
-      
       if (priorityA !== priorityB) {
         return priorityA - priorityB;
       }
-      
-      // If same priority, sort by name
       return a.name.localeCompare(b.name);
     });
   }, [users]);
 
   return (
-    <div className="user-list">
-      <h3>Users ({users.length})</h3>
-      {sortedUsers.map((u, index) => { // Added index for staggering
-        let tagElement = null;
-        if (u.tag) {
-          tagElement = <span className="user-tag" style={{ backgroundColor: defaultColorFor(u.tag) }}> {u.tag.toUpperCase()} </span>;
-        } else if (u.role === 'admin') {
-          tagElement = <span className="user-tag admin"> ADMIN </span>;
-        }
+    <div className={`user-list ${className}`}>
+      <div className="user-list-header">
+        <h3 className="user-list-header-title">Users ({users.length})</h3>
+        {/* This close button is only visible on mobile via CSS */}
+        <button className="user-list-close-btn" onClick={onClose}>×</button>
+      </div>
+      <div className="user-list-content">
+        {sortedUsers.map((u, index) => {
+          let tagElement = null;
+          if (u.tag) {
+            tagElement = <span className="user-tag" style={{ backgroundColor: defaultColorFor(u.tag) }}> {u.tag.toUpperCase()} </span>;
+          } else if (u.role === 'admin') {
+            tagElement = <span className="user-tag admin"> ADMIN </span>;
+          }
 
-        return (
-          <div 
-            key={u.name} 
-            className="user-list-item" 
-            onClick={() => onUserClick(u.name)}
-            style={{ animationDelay: `${index * 50}ms` }} // Staggered animation
-          >
-            {tagElement}
-            <span style={colorize(u.name)}>{u.name}</span>
-            {u.name === me && <span className="you">(you)</span>}
-          </div>
-        );
-      })}
+          return (
+            <div 
+              key={u.name} 
+              className="user-list-item" 
+              onClick={() => onUserClick(u.name)}
+              style={{ animationDelay: `${index * 50}ms` }}
+            >
+              {tagElement}
+              <span style={colorize(u.name)}>{u.name}</span>
+              {u.name === me && <span className="you">(you)</span>}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 });
 
 const AutocompletePanel = ({ suggestions, activeIndex, onSelect }) => {
-  // ... (This component remains unchanged from the previous step)
+  // ... (This component remains unchanged)
   if (suggestions.length === 0) return null;
-
   return (
     <div className="autocomplete-panel">
       {suggestions.map((item, index) => {
@@ -412,7 +415,7 @@ const AutocompletePanel = ({ suggestions, activeIndex, onSelect }) => {
             key={item.text}
             className={`autocomplete-item ${isActive ? 'active' : ''}`}
             onClick={() => onSelect(item)}
-            onMouseEnter={() => {}} // We'll let keyboard handle active state
+            onMouseEnter={() => {}} 
           >
             {item.type === 'command' ? (
               <>
@@ -430,7 +433,7 @@ const AutocompletePanel = ({ suggestions, activeIndex, onSelect }) => {
 };
 
 function parseMentions(parts) {
-  // ... (This function remains unchanged from the previous step)
+  // ... (This function remains unchanged)
   const recipients = new Set();
   let messageStartIndex = -1;
   for (let i = 0; i < parts.length; i++) {
@@ -449,26 +452,22 @@ function parseMentions(parts) {
 // --- Main Chat Component ---
 const Chat = ({ initialWsUrl }) => {
   const [authInfo, setAuthInfo] = useState(null);
-  const [isAppLoaded, setIsAppLoaded] = useState(false); // For login animation
+  const [isAppLoaded, setIsAppLoaded] = useState(false);
   const [messages, setMessages] = useState([]);
   const [users, setUsers] = useState([]);
   const [input, setInput] = useState("");
-  const [helpVisible, setHelpVisible] = useState(false); // Now controls the modal
+  const [helpVisible, setHelpVisible] = useState(false);
+  const [isUserListVisible, setIsUserListVisible] = useState(false); // New state for mobile sidebar
   const [wsUrl, setWsUrl] = useState(null);
   const [loginError, setLoginError] = useState(null);
   const [pinnedMessage, setPinnedMessage] = useState(null);
   const [autocomplete, setAutocomplete] = useState({
-    suggestions: [],
-    activeIndex: 0,
-    isVisible: false,
-    query: "",
-    type: null,
-    prefix: "",
+    suggestions: [], activeIndex: 0, isVisible: false,
+    query: "", type: null, prefix: "",
   });
   
   const authInfoRef = useRef(authInfo);
   authInfoRef.current = authInfo;
-  
   const msgListRef = useRef(null);
   const inputRef = useRef(null);
   
@@ -480,12 +479,11 @@ const Chat = ({ initialWsUrl }) => {
   }, []);
 
   const onMsg = useCallback((data) => {
-    // ... (This function remains unchanged from the previous step)
     if (!data?.type) return;
     switch (data.type) {
       case "auth_ok":
         setAuthInfo(auth => ({...auth, username: data.username, isAdmin: data.role === "admin" }));
-        setIsAppLoaded(true); // Trigger load-in animation
+        setIsAppLoaded(true);
         setLoginError(null);
         setMessages([]);
         pushSys(`Authenticated as ${data.username} (${data.role}). Welcome!`);
@@ -500,7 +498,7 @@ const Chat = ({ initialWsUrl }) => {
       case "users": setUsers(data.users || []); break;
       case "user_join":
         pushSys(`${data.user.name} has joined the chat.`);
-        setUsers(u => [...u, data.user].sort((a, b) => a.name.localeCompare(b.name)));
+        setUsers(u => [...u, data.user]);
         break;
       case "user_leave":
         pushSys(`${data.user.name} has left the chat.`);
@@ -511,16 +509,9 @@ const Chat = ({ initialWsUrl }) => {
           currentUsers.map(u => (u.name === data.user.name ? data.user : u))
         );
         break;
-      case "clear_chat":
-        setMessages([]);
-        setPinnedMessage(null);
-        break;
-      case "broadcast":
-        setPinnedMessage(data);
-        break;
-      case "clear_broadcast":
-        setPinnedMessage(null);
-        break;
+      case "clear_chat": setMessages([]); setPinnedMessage(null); break;
+      case "broadcast": setPinnedMessage(data); break;
+      case "clear_broadcast": setPinnedMessage(null); break;
       case "message": case "ai_resp": case "pm": case "reaction": case "system":
         setMessages(m => [...m, { id: data.id || uuidv4(), ...data }]);
         break;
@@ -529,7 +520,8 @@ const Chat = ({ initialWsUrl }) => {
   }, []);
 
   const onClose = useCallback((code) => {
-    setIsAppLoaded(false); // Reset animation state
+    setIsAppLoaded(false);
+    setIsUserListVisible(false); // Close sidebar on disconnect
     if (code === 1008) {
       setLoginError("You have been disconnected by an admin or due to a policy violation.");
       setAuthInfo(null);
@@ -548,7 +540,6 @@ const Chat = ({ initialWsUrl }) => {
   
   useEffect(() => {
     if (msgListRef.current) {
-        // Scroll to bottom, but smoothly
         msgListRef.current.scrollTo({
           top: msgListRef.current.scrollHeight,
           behavior: 'smooth'
@@ -557,7 +548,7 @@ const Chat = ({ initialWsUrl }) => {
   }, [messages]);
 
   useEffect(() => {
-    // ... (This function remains unchanged from the previous step)
+    // ... (This function remains unchanged)
     if (!authInfo) return;
     const timer = setInterval(() => {
       setMessages(currentMessages => {
@@ -573,7 +564,7 @@ const Chat = ({ initialWsUrl }) => {
 
   // --- Autocomplete Logic ---
   useEffect(() => {
-    // ... (This function remains unchanged from the previous step)
+    // ... (This function remains unchanged)
     if (!input) {
       setAutocomplete(prev => ({ ...prev, isVisible: false }));
       return;
@@ -610,7 +601,7 @@ const Chat = ({ initialWsUrl }) => {
   }, [input, users, authInfo]);
 
   const handleCommand = useCallback((text) => {
-    // ... (This function remains unchanged from the previous step)
+    // ... (This function remains unchanged)
     const parts = text.trim().split(/\s+/);
     const cmd = parts[0].toLowerCase();
     const args = parts.slice(1);
@@ -620,7 +611,7 @@ const Chat = ({ initialWsUrl }) => {
     switch(cmd) {
       case "/e": case "/quit": case "/exit":
         ws.close(); setAuthInfo(null); setWsUrl(null);
-        pushSys("You have disconnected."); // More specific message
+        pushSys("You have disconnected.");
         return;
       case "/help":
         setHelpVisible(v => !v); return;
@@ -655,7 +646,7 @@ const Chat = ({ initialWsUrl }) => {
   }, [ws, pushSys]);
 
   const handleSubmit = () => {
-    // ... (This function remains unchanged from the previous step)
+    // ... (This function remains unchanged)
     const trimmed = input.trim();
     const currentAuth = authInfoRef.current;
     if (!trimmed || !currentAuth) return;
@@ -666,7 +657,7 @@ const Chat = ({ initialWsUrl }) => {
   };
 
   const applySuggestion = (suggestion) => {
-    // ... (This function remains unchanged from the previous step)
+    // ... (This function remains unchanged)
     if (!suggestion) return;
     let newValue = "";
     if (suggestion.type === 'command') {
@@ -680,7 +671,7 @@ const Chat = ({ initialWsUrl }) => {
   };
 
   const handleKeyDown = (e) => {
-    // ... (This function remains unchanged from the previous step)
+    // ... (This function remains unchanged)
     if (autocomplete.isVisible && autocomplete.suggestions.length > 0) {
       if (e.key === 'ArrowUp') {
         e.preventDefault();
@@ -708,25 +699,31 @@ const Chat = ({ initialWsUrl }) => {
   };
 
   const handleLogin = useCallback((loginData) => {
-    // ... (This function remains unchanged from the previous step)
+    // ... (This function remains unchanged)
     setLoginError(null);
     setAuthInfo(loginData);
     setWsUrl(initialWsUrl);
   }, [initialWsUrl]);
 
+  // Updated to also close the mobile sidebar
   const handleUserClick = useCallback((username) => {
-    // ... (This function remains unchanged from the previous step)
     if (!authInfo || username === authInfo.username) return;
     setInput(prev => `/pm @${username} `);
     if (inputRef.current) inputRef.current.focus();
+    setIsUserListVisible(false); // Close sidebar on click
   }, [authInfo]);
 
   if (!authInfo) return <LoginUI onLogin={handleLogin} status={ws.status} error={loginError} />;
 
   return (
     <>
-      {/* Help Modal is now outside the main container for proper overlay */}
       {helpVisible && <HelpModal isAdmin={authInfo.isAdmin} onClose={() => setHelpVisible(false)} />}
+      
+      {/* New overlay for mobile sidebar */}
+      <div 
+        className={`user-list-overlay ${isUserListVisible ? 'is-open' : ''}`}
+        onClick={() => setIsUserListVisible(false)} 
+      />
       
       <div className={`app-container ${isAppLoaded ? 'app-loaded' : ''}`}>
         <header className="chat-header">
@@ -734,6 +731,10 @@ const Chat = ({ initialWsUrl }) => {
           <span className={ws.status === "open" ? "status-connected" : "status-other"}>
             {ws.status === "open" ? "● Connected" : `● ${ws.status}`}
           </span>
+          {/* New mobile user list toggle button */}
+          <button className="header-users-btn" onClick={() => setIsUserListVisible(true)}>
+            👤 {users.length}
+          </button>
         </header>
         
         {pinnedMessage && (
@@ -744,7 +745,15 @@ const Chat = ({ initialWsUrl }) => {
           <div className="message-list-container" ref={msgListRef}>
             {messages.map((m) => <MessageItem key={m.id} m={m} me={authInfo.username} />)}
           </div>
-          <UserList users={users} me={authInfo.username} onUserClick={handleUserClick} />
+          
+          {/* UserList is now one component, styled by CSS based on screen size */}
+          <UserList 
+            users={users} 
+            me={authInfo.username} 
+            onUserClick={handleUserClick}
+            onClose={() => setIsUserListVisible(false)}
+            className={isUserListVisible ? 'is-open' : ''}
+          />
         </main>
         
         <footer className="footer">
@@ -774,8 +783,6 @@ const Chat = ({ initialWsUrl }) => {
               autoComplete="off"
             />
           </form>
-          
-          {/* Old help panel is removed from here */}
         </footer>
       </div>
     </>

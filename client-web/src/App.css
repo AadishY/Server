@@ -34,23 +34,18 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
-
 @keyframes slideInUp {
   from { opacity: 0; transform: translateY(15px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-100%); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes panelSlideUp {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
-/* New modal animations */
 @keyframes modalFadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -59,20 +54,32 @@
   from { opacity: 0; transform: translateY(30px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-
 @keyframes pulseGlow {
   0% { box-shadow: 0 0 0 0 var(--accent-glow-strong); }
   70% { box-shadow: 0 0 0 6px rgba(0,0,0,0); }
   100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
 }
 
+/* ---
+  FIX #2: This new rule anchors the app to the full screen height
+  and fixes the "gap at the bottom" problem.
+--- */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Prevent body scrolling */
+}
+
 /* --- Global & Layout --- */
 * {
   box-sizing: border-box;
-  /* Use ease-out for a more fluid feel */
   transition: background-color 0.2s ease-out, color 0.2s ease-out, border-color 0.2s ease-out, transform 0.15s ease-out;
 }
-
+html, body {
+  -webkit-tap-highlight-color: transparent; /* Disable gray tap flash on mobile */
+}
 body {
   margin: 0;
   background-color: var(--bg-1);
@@ -94,8 +101,10 @@ body {
 .app-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  width: 100vw;
+  height: 100%; /* Changed from 100vh to 100% to obey parent */
+  /* Support mobile 100vh bug */
+  height: -webkit-fill-available;
+  width: 100%; /* Changed from 100vw to 100% */
 }
 
 /* --- Login UI --- */
@@ -103,20 +112,19 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100vh;
+  height: 100%;
   background: radial-gradient(circle, var(--bg-2) 0%, var(--bg-1) 100%);
 }
-
 .login-box {
   border: 1px solid var(--border-1);
   border-radius: 12px;
   padding: 32px;
   background-color: var(--bg-2);
-  width: 340px;
+  width: 90%;
+  max-width: 340px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
   animation: slideInUp 0.5s cubic-bezier(0.25, 1, 0.5, 1);
 }
-
 .login-header {
   display: flex;
   justify-content: space-between;
@@ -125,14 +133,12 @@ body {
 }
 .login-header h2 { margin: 0; color: var(--accent); font-weight: 700; }
 .login-header span { color: var(--text-3); font-size: 0.9rem; }
-
 .login-box .error {
   color: var(--admin); margin-bottom: 16px; text-align: center;
   background-color: rgba(255, 77, 77, 0.1);
   border: 1px solid rgba(255, 77, 77, 0.3);
   padding: 10px; border-radius: 6px; font-weight: 500;
 }
-
 .login-box form { display: flex; flex-direction: column; }
 .login-box label { font-weight: 500; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-2); }
 .login-box input {
@@ -150,8 +156,7 @@ body {
   font-weight: 600; cursor: pointer;
 }
 .login-box button:hover { filter: brightness(1.2); transform: translateY(-1px); }
-.login-box button:active { transform: translateY(0) scale(0.98); } /* Squish effect */
-
+.login-box button:active { transform: translateY(0) scale(0.98); }
 .waking-message { text-align: center; }
 .waking-message .spinner {
   width: 24px; height: 24px; border: 3px solid var(--accent);
@@ -161,22 +166,13 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* --- Chat Layout & Load-in Animation --- */
-/* --- Chat Layout & Load-in Animation --- */
 .chat-header, .main-layout, .footer {
-  /* Start hidden, wait for app-loaded class */
   opacity: 0;
-  /* REMOVED animation-fill-mode: forwards; from here */
+  animation-fill-mode: forwards;
 }
-
-.app-container.app-loaded .chat-header {
-  animation: slideInUp 0.5s cubic-bezier(0.25, 1, 0.5, 1) 0.1s forwards; /* ADDED forwards */
-}
-.app-container.app-loaded .main-layout {
-  animation: slideInUp 0.5s cubic-bezier(0.25, 1, 0.5, 1) 0.2s forwards; /* ADDED forwards */
-}
-.app-container.app-loaded .footer {
-  animation: slideInUp 0.5s cubic-bezier(0.25, 1, 0.5, 1) 0.3s forwards; /* ADDED forwards */
-}
+.app-container.app-loaded .chat-header { animation: slideInUp 0.5s cubic-bezier(0.25, 1, 0.5, 1) 0.1s forwards; }
+.app-container.app-loaded .main-layout { animation: slideInUp 0.5s cubic-bezier(0.25, 1, 0.5, 1) 0.2s forwards; }
+.app-container.app-loaded .footer { animation: slideInUp 0.5s cubic-bezier(0.25, 1, 0.5, 1) 0.3s forwards; }
 
 .chat-header {
   padding: 14px 24px; border-bottom: 1px solid var(--border-1);
@@ -206,7 +202,6 @@ body {
   flex-grow: 1; display: flex; flex-direction: column;
   padding: 0 24px 24px 24px; overflow-y: auto;
 }
-
 .message {
   margin-top: 12px; padding: 6px 12px; border-radius: 8px;
   max-width: 95%; line-height: 1.5;
@@ -215,12 +210,10 @@ body {
 }
 .message:hover { background-color: var(--bg-1); }
 .message.mention { background-color: var(--mention-bg); border-left: 3px solid var(--mention); padding-left: 9px; }
-
 .message-header { display: flex; align-items: center; margin-bottom: 4px; }
 .message-header .from { font-weight: 600; margin-right: 10px; }
 .message-header .timestamp { font-size: 0.75rem; color: var(--text-3); margin-left: auto; }
 .message-header .pm-arrow { color: var(--text-3); margin: 0 6px; }
-
 .message-body { white-space: pre-wrap; word-break: break-word; color: var(--text-2); font-size: 0.95rem; }
 
 /* --- System Messages (Redesigned) --- */
@@ -260,15 +253,36 @@ body {
 /* --- User List --- */
 .user-list {
   width: 25%; min-width: 200px; max-width: 300px;
-  border-left: 1px solid var(--border-1); padding: 20px;
-  overflow-y: auto; flex-shrink: 0; background-color: var(--bg-3);
+  border-left: 1px solid var(--border-1);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background-color: var(--bg-3);
 }
-.user-list h3 {
-  margin-top: 0; margin-bottom: 16px; font-weight: 600;
-  color: var(--text-1); border-bottom: 1px solid var(--border-1);
+.user-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 20px 0 20px;
+}
+.user-list-header h3 {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.user-list-close-btn {
+  display: none; /* Hidden by default */
+}
+.user-list-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex-grow: 1;
+}
+.user-list-header-title {
+  border-bottom: 1px solid var(--border-1);
   padding-bottom: 12px;
+  width: 100%;
 }
-
 .user-list-item {
   display: flex; align-items: center; margin-bottom: 8px;
   padding: 6px 8px; border-radius: 6px; cursor: pointer;
@@ -284,7 +298,6 @@ body {
 .user-list-item:hover::before { left: 0; }
 .user-list-item:active { transform: scale(0.97); } /* Squish */
 .user-list-item > * { position: relative; z-index: 1; }
-
 .user-tag {
   font-size: 0.7rem; font-weight: 700; color: white;
   padding: 3px 6px; border-radius: 4px;
@@ -326,15 +339,11 @@ body {
   max-height: 250px; overflow-y: auto; z-index: 100;
   animation: panelSlideUp 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
-.autocomplete-item {
-  padding: 12px 16px; cursor: pointer;
-  border-bottom: 1px solid var(--border-1);
-}
+.autocomplete-item { padding: 12px 16px; cursor: pointer; border-bottom: 1px solid var(--border-1); }
 .autocomplete-item:last-child { border-bottom: none; }
 .autocomplete-item:hover { background-color: var(--bg-1); }
 .autocomplete-item.active { background-color: var(--accent); color: #fff; }
 .autocomplete-item:active { transform: scale(0.98); } /* Squish */
-
 .autocomplete-item .command-name { font-weight: 600; color: var(--accent); }
 .autocomplete-item.active .command-name { color: #fff; }
 .autocomplete-item .command-desc { font-size: 0.9rem; color: var(--text-3); margin-left: 10px; }
@@ -342,22 +351,17 @@ body {
 
 /* --- Help Panel (Modal Redesign) --- */
 .help-modal-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background-color: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(5px);
   z-index: 199;
   animation: modalFadeIn 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 .help-panel {
-  position: fixed;
-  top: 50%; left: 50%;
+  position: fixed; top: 50%; left: 50%;
   transform: translate(-50%, -50%);
-  width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
+  width: 90%; max-width: 600px; max-height: 80vh;
+  display: flex; flex-direction: column;
   border: 1px solid var(--border-1);
   border-radius: 12px;
   background-color: var(--bg-2);
@@ -366,54 +370,110 @@ body {
   animation: modalSlideIn 0.4s cubic-bezier(0.25, 1, 0.5, 1);
 }
 .help-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--border-1);
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 24px; border-bottom: 1px solid var(--border-1);
 }
-.help-panel-header h4 {
-  margin: 0;
-  font-weight: 600;
-  font-size: 1.2rem;
-  color: var(--text-1);
-}
+.help-panel-header h4 { margin: 0; font-weight: 600; font-size: 1.2rem; color: var(--text-1); }
 .help-panel-close-btn {
-  background: var(--bg-4);
-  border: none;
-  color: var(--text-2);
-  font-size: 1.2rem;
-  font-weight: 600;
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: var(--bg-4); border: none; color: var(--text-2);
+  font-size: 1.2rem; font-weight: 600; border-radius: 50%;
+  width: 32px; height: 32px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
 }
 .help-panel-close-btn:hover { background-color: var(--bg-1); color: var(--text-1); }
 .help-panel-close-btn:active { transform: scale(0.95); }
-
-.help-panel-content {
-  padding: 24px;
-  overflow-y: auto;
-}
+.help-panel-content { padding: 24px; overflow-y: auto; }
 .help-panel-content .command {
-  color: var(--accent);
-  font-family: monospace;
-  background-color: var(--bg-3);
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-size: 0.9em;
+  color: var(--accent); font-family: monospace; background-color: var(--bg-3);
+  padding: 2px 4px; border-radius: 4px; font-size: 0.9em;
 }
 .help-panel-content h5 {
-  margin-top: 16px;
-  margin-bottom: 8px;
-  font-weight: 600;
-  color: var(--text-1);
-  border-bottom: 1px solid var(--border-1);
+  margin-top: 16px; margin-bottom: 8px; font-weight: 600;
+  color: var(--text-1); border-bottom: 1px solid var(--border-1);
   padding-bottom: 6px;
 }
 .help-panel-content p { margin: 8px 0; color: var(--text-2); line-height: 1.6; }
 .help-panel-content .admin-commands { margin-top: 24px; }
+
+
+/* ---
+  Responsive Mobile Design (NEW)
+--- */
+
+.header-users-btn {
+  display: none; /* Hidden on desktop */
+  background: var(--bg-4);
+  border: 1px solid var(--border-1);
+  color: var(--text-2);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+.header-users-btn:active {
+  transform: scale(0.95);
+}
+
+.user-list-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  /* --- FIX #1: Removed blur, kept dim --- */
+  background: rgba(0,0,0,0.6);
+  /* backdrop-filter: blur(4px); */ 
+  z-index: 199;
+  animation: modalFadeIn 0.3s ease;
+}
+
+/* --- Mobile Breakpoint --- */
+@media (max-width: 768px) {
+  .chat-header { padding: 12px 16px; }
+  .footer { padding: 12px 16px; }
+  .footer .login-info { display: none; } /* Hide "Logged in as" on small screens */
+  .message-list-container { padding: 0 16px 16px 16px; }
+  .autocomplete-panel { left: 16px; right: 16px; bottom: 75px; }
+  
+  .header-users-btn {
+    display: flex;
+    align-items: center;
+  }
+  
+  .user-list {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 280px; /* Fixed width for the sidebar */
+    max-width: 80%;
+    height: 100%;
+    height: -webkit-fill-available;
+    z-index: 200;
+    border-left: 1px solid var(--border-1);
+    box-shadow: -5px 0 30px rgba(0,0,0,0.3);
+    
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  }
+  
+  .user-list.is-open {
+    transform: translateX(0);
+  }
+  
+  .user-list-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-4);
+    border: none;
+    color: var(--text-2);
+    font-size: 1.2rem;
+    font-weight: 600;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+  }
+  
+  .user-list-overlay.is-open {
+    display: block;
+  }
+}
