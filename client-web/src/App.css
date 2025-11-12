@@ -1,0 +1,324 @@
+/* --- Global & Layout --- */
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --bg-color: #1a1a1a;
+  --text-color: #f0f0f0;
+  --border-color: #444;
+  --input-bg: #333;
+  --system-color: #888;
+  --link-color: #61dafb;
+  --admin-color: #ff5555;
+  --mention-bg: #4f4a29;
+  --broadcast-bg: #4a2c52;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  overflow: hidden;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* --- Login UI --- */
+.login-ui {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.login-box {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 24px;
+  background-color: #242424;
+  width: 300px;
+}
+
+.login-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.login-header h2 {
+  margin: 0;
+  color: var(--link-color);
+}
+
+.login-header span {
+  color: var(--system-color);
+}
+
+.login-box .error {
+  color: var(--admin-color);
+  margin-bottom: 12px;
+}
+
+.login-box form {
+  display: flex;
+  flex-direction: column;
+}
+
+.login-box label {
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.login-box input {
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background-color: var(--input-bg);
+  color: var(--text-color);
+  margin-bottom: 12px;
+}
+
+.login-box button {
+  padding: 10px;
+  border: none;
+  border-radius: 4px;
+  background-color: var(--link-color);
+  color: #000;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.waking-message {
+  text-align: center;
+}
+
+.waking-message .spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--link-color);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 10px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+
+/* --- Chat Layout --- */
+.chat-header {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.chat-header h1 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--link-color);
+}
+
+.chat-header .status-connected {
+  color: #4caf50;
+}
+.chat-header .status-other {
+  color: #ffeb3b;
+}
+
+.broadcast-message {
+  padding: 10px 16px;
+  background-color: var(--broadcast-bg);
+  border-bottom: 1px solid #8e44ad;
+  text-align: center;
+  font-weight: bold;
+  flex-shrink: 0;
+  color: #f0f0f0;
+}
+.broadcast-message .from { color: #e0aaff; margin-right: 8px; }
+
+.main-layout {
+  display: flex;
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+/* --- Message List --- */
+.message-list-container {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color);
+}
+
+.message {
+  margin-bottom: 8px;
+  max-width: 90%;
+  line-height: 1.4;
+}
+
+.message .timestamp {
+  font-size: 0.75rem;
+  color: var(--system-color);
+  margin-right: 8px;
+}
+
+.message .from {
+  font-weight: bold;
+  margin-right: 8px;
+}
+
+.message .message-body {
+  white-space: pre-wrap;
+}
+
+.message.mention {
+  background-color: var(--mention-bg);
+  border-left: 3px solid #f9a825;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.system-message {
+  font-style: italic;
+  color: var(--system-color);
+}
+
+.ai-message .from {
+  color: #4fc3f7;
+}
+
+.pm-message .from, .pm-message .to {
+  color: #ba68c8;
+  font-weight: bold;
+}
+.pm-message .arrow {
+  color: var(--system-color);
+}
+
+/* Text Formatting */
+.spoiler {
+  background-color: var(--text-color);
+  color: var(--text-color);
+  border-radius: 3px;
+}
+.spoiler:hover {
+  color: var(--bg-color);
+}
+.blockquote {
+  font-style: italic;
+  color: var(--system-color);
+  border-left: 3px solid var(--border-color);
+  padding-left: 8px;
+  display: block;
+}
+
+
+/* --- User List --- */
+.user-list {
+  width: 25%;
+  min-width: 180px;
+  max-width: 300px;
+  border-left: 1px solid var(--border-color);
+  padding: 16px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.user-list h3 {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+.user-list-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.user-tag {
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: white;
+  padding: 2px 5px;
+  border-radius: 4px;
+  margin-right: 6px;
+}
+
+.user-tag.admin {
+  background-color: var(--admin-color);
+}
+
+.user-list-item .you {
+  color: var(--system-color);
+  margin-left: 4px;
+}
+
+/* --- Footer & Input --- */
+.footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-color);
+  padding: 12px 16px;
+}
+
+.footer .login-info {
+  font-size: 0.8rem;
+  color: var(--system-color);
+  margin-bottom: 8px;
+}
+.footer .login-info .admin-tag {
+  color: var(--admin-color);
+  font-weight: bold;
+}
+
+.input-form {
+  display: flex;
+}
+
+.input-form input {
+  flex-grow: 1;
+  padding: 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background-color: var(--input-bg);
+  color: var(--text-color);
+  font-size: 1rem;
+}
+
+/* Help Panel */
+.help-panel {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+  background-color: #242424;
+}
+.help-panel h4 {
+  margin-top: 0;
+}
+.help-panel .command {
+  color: var(--link-color);
+  font-family: monospace;
+}
+.help-panel p {
+  margin: 4px 0;
+}
+.help-panel .admin-commands {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+}
