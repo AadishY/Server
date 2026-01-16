@@ -12,8 +12,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Any, Set, List
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status, Request
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from dotenv import load_dotenv
@@ -533,4 +533,42 @@ async def startup_event():
 @app.on_event("shutdown")
 def shutdown_event(): save_state()
 @app.get("/")
-async def root(): return HTMLResponse("<h1>Akatsuki Server</h1>")
+async def root(request: Request):
+    user_agent = request.headers.get("user-agent", "").lower()
+    if "curl" in user_agent:
+        host_header = request.headers.get("host", "localhost")
+        if ":" in host_header:
+            host, port_str = host_header.split(":")
+            port = int(port_str)
+        else:
+            host = host_header
+            # Assume 80 or 443 depending on scheme, but we can try to guess or default to standard
+            # Ideally use request.url.port but headers are more reliable for what user typed
+            port = 443 if request.url.scheme == "https" else 80
+
+        secure = request.url.scheme == "https"
+        
+        # Read the lite client
+        try:
+            file_path = os.path.join(os.path.dirname(__file__), "lite_client.py")
+            with open(file_path, "r") as f:
+                content = f.read()
+            
+            # Inject configuration
+            content = content.replace('HOST = "localhost"', f'HOST = "{host}"')
+            content = content.replace('PORT = 8000', f'PORT = {port}')
+            content = content.replace('SECURE = False', f'SECURE = {secure}')
+            content = content.replace('ADMIN_USERNAME_PLACEHOLDER = "Admin"', f'ADMIN_USERNAME_PLACEHOLDER = "{ADMIN_USERNAME}"')
+            
+            return PlainTextResponse(content)
+        except FileNotFoundError:
+            return PlainTextResponse("# Error: Client script not found on server.")
+
+    return HTMLResponse("<h1>Akatsuki Server</h1>")
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    # Reload only if explicitly in dev mode or not specified (safe default for dev, explicit off for prod)
+    is_dev = os.environ.get("ENV", "development").lower() == "development"
+    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=is_dev)

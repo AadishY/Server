@@ -47,11 +47,25 @@ The server is built with FastAPI and Uvicorn.
 
 ### 2. Client Setup
 
-The client is a terminal application that can be run directly from the source or installed globally via NPM.
+You have three ways to use the client: using our modern NPM CLI, the zero-dependency Lite Client (Curl), or running from source.
 
-#### Option A: Install Globally from NPM (Recommended)
+#### Option A: Lite Client (Recommended for Quick Start)
 
-Once the package is published to NPM, you can install and run it with two simple commands:
+You can join the chat instantly without installing anything (except Python 3) by running this command in your terminal:
+
+```bash
+curl -sL http://your-server-domain.com | python3
+```
+*(Replace `http://your-server-domain.com` with your actual server URL, or `http://localhost:8000` if running locally.)*
+
+Features of Lite Client:
+- **Zero Install:** No `npm install` or pip requirements.
+- **Secure Admin Login:** Logging in as Admin prompts for password securely.
+- **Cross-Platform:** Works on Windows (PowerShell/CMD), macOS, and Linux.
+
+#### Option B: Install Globally from NPM (Rich UI)
+
+The NPM client offers a richer TUI (Text User Interface).
 
 1.  **Install the package globally:**
     ```bash
@@ -63,7 +77,7 @@ Once the package is published to NPM, you can install and run it with two simple
     aadish
     ```
 
-#### Option B: Run from Source
+#### Option C: Run from Source
 
 1.  **Navigate to the client directory:**
     ```bash
@@ -79,6 +93,26 @@ Once the package is published to NPM, you can install and run it with two simple
     ```bash
     npm start
     ```
+
+---
+
+## Deployment
+
+The server is production-ready.
+
+1.  **Environment Variables**:
+    Ensure the following environment variables are set in your cloud provider (e.g., Heroku, Render, AWS):
+    - `PORT`: (Automatically set by most providers)
+    - `ENV`: Set to `production`
+    - `ADMIN_USERNAME`: Your admin username
+    - `ADMIN_PASSWORD`: Your admin password
+    - `GROQ_API_KEY`: For AI features
+
+2.  **Start Command**:
+    ```bash
+    python server/server.py
+    ```
+
 
 ---
 
