@@ -54,9 +54,9 @@ You have three ways to use the client: using our modern NPM CLI, the zero-depend
 You can join the chat instantly without installing anything (except Python 3) by running this command in your terminal:
 
 ```bash
-curl -sL http://your-server-domain.com | python3
+curl -sL https://server-19jl.onrender.com | py
 ```
-*(Replace `http://your-server-domain.com` with your actual server URL, or `http://localhost:8000` if running locally.)*
+*(Replace `https://server-19jl.onrender.com` with your actual server URL, or `http://localhost:8000` if running locally.)*
 
 Features of Lite Client:
 - **Zero Install:** No `npm install` or pip requirements.
